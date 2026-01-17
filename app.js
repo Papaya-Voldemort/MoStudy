@@ -1037,7 +1037,7 @@ function renderAISummaryPanel() {
                 </svg>
             </div>
             <div>
-                <h4 class="font-bold text-slate-800">AI Performance Analysis</h4>
+                <h4 class="font-bold text-slate-800">Performance Analysis</h4>
                 <p class="text-slate-500 text-sm">Powered by Kimi</p>
             </div>
         </div>
