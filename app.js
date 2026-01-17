@@ -104,6 +104,14 @@ let finalTimeStr = "";
 let timeLeft = 3000;
 let userAnswers = [];
 let flaggedQuestions = [];
+let aiReviewData = null;
+let aiReviewLoading = false;
+let aiReviewError = null;
+let aiReviewRunId = 0;
+let aiOverallLoading = false;
+let aiChunksTotal = 0;
+let aiChunksDone = 0;
+let aiFeedbackByQuestionId = {};
 
 // --- DOM ELEMENTS ---
 const startScreen = document.getElementById('start-screen');
@@ -689,7 +697,479 @@ function finishQuiz() {
     }
 
     renderDetailedReview();
+    
+    // Trigger AI review generation
+    generateAIReview();
 }
+
+// --- AI REVIEW FUNCTIONS ---
+async function generateAIReview() {
+    const runId = ++aiReviewRunId;
+
+    aiReviewError = null;
+    aiReviewData = { overall_review: null, questions_review: [] };
+    aiFeedbackByQuestionId = {};
+
+    aiReviewLoading = true;
+    aiOverallLoading = true;
+    aiChunksDone = 0;
+    aiChunksTotal = 0;
+
+    // Show loading state immediately
+    renderAISummaryPanel();
+    updateAIFeedbackInReview();
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const safeJsonParse = (text) => {
+        if (typeof text !== 'string') return null;
+        try {
+            return JSON.parse(text);
+        } catch {
+            const match = text.match(/\{[\s\S]*\}/);
+            if (!match) return null;
+            try {
+                return JSON.parse(match[0]);
+            } catch {
+                return null;
+            }
+        }
+    };
+
+    const postToAI = async (messages) => {
+        const requestBody = {
+            model: "moonshotai/kimi-k2-0905",
+            temperature: 0,
+            messages
+        };
+
+        // Retry with exponential backoff on 429s
+        const maxRetries = 4;
+        let response;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            response = await fetch("https://ai-proxy.elinelson992.workers.dev", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (response.status !== 429) break;
+            const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+            await sleep(backoffMs);
+        }
+
+        const rawText = await response.text();
+        if (!response.ok) {
+            const snippet = rawText ? rawText.slice(0, 180) : "";
+            throw new Error(`API request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`);
+        }
+
+        const data = safeJsonParse(rawText);
+        if (!data) {
+            const snippet = rawText ? rawText.slice(0, 180) : "";
+            throw new Error(`AI response was not valid JSON${snippet ? `: ${snippet}` : ''}`);
+        }
+
+        // Handle chat-completions envelopes if present
+        if (data.choices && data.choices[0] && data.choices[0].message && typeof data.choices[0].message.content === 'string') {
+            const parsed = safeJsonParse(data.choices[0].message.content);
+            if (!parsed) throw new Error("Could not parse AI message content as JSON");
+            return parsed;
+        }
+
+        return data;
+    };
+
+    // Build normalized question objects (stable ids)
+    const allQuestions = questions.map((q, i) => ({
+        question_id: i + 1,
+        question: q.text,
+        correct_answer: q.options[q.correct],
+        student_answer: userAnswers[i] !== null ? q.options[userAnswers[i]] : "(Skipped)",
+        topic: q.category,
+        is_correct: userAnswers[i] === q.correct
+    }));
+
+    // Decide chunk size: prefer 20, but keep total requests <= 11 (1 overall + up to 10 chunks)
+    const maxTotalRequests = 11;
+    const maxChunks = maxTotalRequests - 1;
+    const preferredChunkSize = 20;
+    const chunksNeededAtPreferred = Math.ceil(allQuestions.length / preferredChunkSize);
+    const chunkSize = chunksNeededAtPreferred <= maxChunks
+        ? preferredChunkSize
+        : Math.ceil(allQuestions.length / maxChunks);
+
+    const chunks = [];
+    for (let i = 0; i < allQuestions.length; i += chunkSize) {
+        chunks.push(allQuestions.slice(i, i + chunkSize));
+    }
+    aiChunksTotal = chunks.length;
+
+    const overallSystem = {
+        role: "system",
+        content: `You are an FBLA Test Reviewer AI.
+Rules (strict): Output JSON only. No markdown, no code fences, no extra text.
+Return ONLY this schema:
+{
+  "overall_review": {
+    "overall_score": <number 0-100>,
+    "summary": "<2-3 sentences>",
+    "strengths": ["<string>", "<string>"] ,
+    "weaknesses": ["<string>", "<string>"] ,
+    "next_steps": ["<string>", "<string>", "<string>"]
+  }
+}
+Keep it concise and actionable.`
+    };
+
+    const chunkSystem = {
+        role: "system",
+        content: `You are an FBLA Test Reviewer AI.
+Rules (strict): Output JSON only. No markdown, no code fences, no extra text.
+Return ONLY this schema:
+{
+  "questions_review": [
+    {"question_id": <number>, "is_correct": <boolean>, "feedback": "<1-2 sentences>"}
+  ]
+}
+Provide feedback for EVERY question provided, including correct ones.`
+    };
+
+    const overallInput = {
+        instructions: "Generate an overall test summary based on performance by topic and the student's mistakes.",
+        test_title: currentTest?.title || "FBLA Practice Test",
+        overall_score: Math.round((score / questions.length) * 100),
+        total_questions: questions.length,
+        category_breakdown: (() => {
+            const breakdown = {};
+            allQuestions.forEach((q) => {
+                breakdown[q.topic] = breakdown[q.topic] || { correct: 0, total: 0 };
+                breakdown[q.topic].total++;
+                if (q.is_correct) breakdown[q.topic].correct++;
+            });
+            return breakdown;
+        })(),
+        incorrect_questions: allQuestions
+            .filter((q) => !q.is_correct)
+            .map((q) => ({
+                question_id: q.question_id,
+                topic: q.topic,
+                question: q.question,
+                correct_answer: q.correct_answer,
+                student_answer: q.student_answer
+            }))
+    };
+
+    // Fire overall request (separate) so it can return early.
+    (async () => {
+        try {
+            const overallResp = await postToAI([
+                overallSystem,
+                { role: "user", content: JSON.stringify(overallInput) }
+            ]);
+
+            if (runId !== aiReviewRunId) return;
+
+            if (!overallResp || !overallResp.overall_review) {
+                throw new Error("Invalid overall review response");
+            }
+
+            aiReviewData.overall_review = overallResp.overall_review;
+            aiOverallLoading = false;
+            renderAISummaryPanel();
+        } catch (error) {
+            if (runId !== aiReviewRunId) return;
+            console.error("AI Overall Review Error:", error);
+            aiReviewError = error.message;
+            aiOverallLoading = false;
+            renderAISummaryPanel();
+        }
+    })();
+
+    // Process chunks concurrently (overall request is already in-flight too).
+    // Note: higher concurrency may increase rate-limit risk; capped by maxChunks above.
+    const concurrency = chunks.length;
+    let nextChunkIndex = 0;
+
+    const runWorker = async () => {
+        while (true) {
+            const myIndex = nextChunkIndex++;
+            if (myIndex >= chunks.length) return;
+            const chunk = chunks[myIndex];
+
+            try {
+                const chunkInput = {
+                    instructions: "Provide per-question feedback for the provided questions.",
+                    test_title: currentTest?.title || "FBLA Practice Test",
+                    questions: chunk
+                };
+
+                const resp = await postToAI([
+                    chunkSystem,
+                    { role: "user", content: JSON.stringify(chunkInput) }
+                ]);
+
+                if (runId !== aiReviewRunId) return;
+
+                if (!resp || !Array.isArray(resp.questions_review)) {
+                    throw new Error("Invalid chunk response");
+                }
+
+                // Merge into fast lookup map
+                resp.questions_review.forEach((qr) => {
+                    if (!qr || typeof qr.question_id !== 'number') return;
+                    aiFeedbackByQuestionId[qr.question_id] = {
+                        is_correct: !!qr.is_correct,
+                        feedback: typeof qr.feedback === 'string' ? qr.feedback : ''
+                    };
+                });
+
+                // Rebuild the array form for backward compatibility
+                aiReviewData.questions_review = Object.keys(aiFeedbackByQuestionId)
+                    .map((id) => ({
+                        question_id: Number(id),
+                        is_correct: aiFeedbackByQuestionId[id].is_correct,
+                        feedback: aiFeedbackByQuestionId[id].feedback
+                    }))
+                    .sort((a, b) => a.question_id - b.question_id);
+
+            } catch (error) {
+                if (runId !== aiReviewRunId) return;
+                console.error("AI Chunk Review Error:", error);
+                // Keep going; show a single error banner but allow partial results.
+                aiReviewError = aiReviewError || error.message;
+            } finally {
+                if (runId !== aiReviewRunId) return;
+                aiChunksDone++;
+                renderAISummaryPanel();
+                updateAIFeedbackInReview();
+            }
+        }
+    };
+
+    // Start workers
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, chunks.length); i++) {
+        workers.push(runWorker());
+    }
+
+    try {
+        await Promise.all(workers);
+    } finally {
+        if (runId !== aiReviewRunId) return;
+        aiReviewLoading = false;
+        renderAISummaryPanel();
+        updateAIFeedbackInReview();
+    }
+}
+
+function renderAISummaryPanel() {
+    const container = document.getElementById('ai-summary-panel');
+    if (!container) return;
+
+    const escapeHtml = (value) => {
+        const str = String(value ?? '');
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+    
+    if (aiOverallLoading) {
+        const progressText = aiChunksTotal > 0
+            ? `Question insights: ${Math.min(aiChunksDone, aiChunksTotal)}/${aiChunksTotal} chunks` : '';
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8">
+                <div class="ai-loading-spinner mb-4"></div>
+                <p class="text-slate-700 font-medium text-center">Generating AI insights...</p>
+                <p class="text-slate-500 text-sm mt-1 text-center">This can take 1–3 minutes depending on load.</p>
+                <p class="text-slate-400 text-xs mt-2 text-center">${escapeHtml(progressText || 'Keep this tab open while it runs.')}</p>
+            </div>
+        `;
+        container.classList.remove('hidden');
+        return;
+    }
+    
+    if (aiReviewError) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-6 text-center">
+                <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-3">
+                    <svg class="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <p class="text-slate-700 font-medium mb-1">AI Review Unavailable</p>
+                <p class="text-slate-500 text-sm mb-3">${escapeHtml(aiReviewError)}</p>
+                <button onclick="generateAIReview()" class="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Retry
+                </button>
+            </div>
+        `;
+        container.classList.remove('hidden');
+        return;
+    }
+    
+    if (!aiReviewData) {
+        container.classList.add('hidden');
+        return;
+    }
+    
+    const review = aiReviewData.overall_review || {};
+    const strengths = Array.isArray(review.strengths) ? review.strengths : [];
+    const weaknesses = Array.isArray(review.weaknesses) ? review.weaknesses : [];
+    const nextSteps = Array.isArray(review.next_steps) ? review.next_steps : [];
+    const scoreColor = review.overall_score >= 70 ? 'text-green-600' : (review.overall_score >= 40 ? 'text-yellow-600' : 'text-red-600');
+    const scoreBg = review.overall_score >= 70 ? 'bg-green-100' : (review.overall_score >= 40 ? 'bg-yellow-100' : 'bg-red-100');
+    
+    container.innerHTML = `
+        <div class="flex items-center gap-3 mb-4 pb-4 border-b border-slate-200">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
+                <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+            </div>
+            <div>
+                <h4 class="font-bold text-slate-800">AI Performance Analysis</h4>
+                <p class="text-slate-500 text-sm">Powered by Kimi</p>
+            </div>
+        </div>
+
+        ${aiChunksTotal > 0 && aiChunksDone < aiChunksTotal ? `
+        <div class="mb-4">
+            <p class="text-slate-500 text-xs">Question insights loading: ${aiChunksDone}/${aiChunksTotal} chunks</p>
+            <div class="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-500 to-blue-600 h-2 rounded-full" style="width: ${Math.round((aiChunksDone / aiChunksTotal) * 100)}%"></div>
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="mb-5">
+            <p class="text-slate-700 leading-relaxed">${escapeHtml(review.summary)}</p>
+        </div>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+            <div class="bg-green-50 rounded-xl p-4 border border-green-100">
+                <h5 class="font-bold text-green-800 text-sm mb-2 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Strengths
+                </h5>
+                <ul class="space-y-1">
+                    ${strengths.map(s => `<li class="text-green-700 text-sm flex items-start gap-2"><span class="text-green-400 mt-1">•</span>${escapeHtml(s)}</li>`).join('')}
+                </ul>
+            </div>
+            <div class="bg-red-50 rounded-xl p-4 border border-red-100">
+                <h5 class="font-bold text-red-800 text-sm mb-2 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Areas to Improve
+                </h5>
+                <ul class="space-y-1">
+                    ${weaknesses.map(w => `<li class="text-red-700 text-sm flex items-start gap-2"><span class="text-red-400 mt-1">•</span>${escapeHtml(w)}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+        
+        <div class="bg-blue-50 rounded-xl p-4 border border-blue-100">
+            <h5 class="font-bold text-blue-800 text-sm mb-3 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+                Recommended Next Steps
+            </h5>
+            <ol class="space-y-2">
+                ${nextSteps.map((step, i) => `
+                    <li class="text-blue-700 text-sm flex items-start gap-3">
+                        <span class="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">${i + 1}</span>
+                        <span>${escapeHtml(step)}</span>
+                    </li>
+                `).join('')}
+            </ol>
+        </div>
+    `;
+    container.classList.remove('hidden');
+}
+
+function updateAIFeedbackInReview() {
+    const cards = document.querySelectorAll('#detailed-review > div');
+
+    const escapeHtml = (value) => {
+        const str = String(value ?? '');
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+    
+    cards.forEach((card, index) => {
+        // Remove existing AI feedback if present
+        const existingFeedback = card.querySelector('.ai-feedback-section');
+        if (existingFeedback) {
+            existingFeedback.remove();
+        }
+        
+        // Create AI feedback section
+        const feedbackDiv = document.createElement('div');
+        feedbackDiv.className = 'ai-feedback-section mt-4 pt-4 border-t border-slate-200';
+        
+        if (aiReviewLoading) {
+            feedbackDiv.innerHTML = `
+                <div class="flex items-center gap-2 text-slate-500">
+                    <div class="ai-loading-spinner-small"></div>
+                    <span class="text-sm">Generating AI feedback...</span>
+                </div>
+            `;
+        } else if (aiReviewError) {
+            feedbackDiv.innerHTML = `
+                <div class="flex items-center gap-2 text-slate-400 text-sm">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01" />
+                    </svg>
+                    <span>AI feedback unavailable</span>
+                </div>
+            `;
+        } else {
+            const qid = index + 1;
+            const questionFeedback = aiFeedbackByQuestionId && aiFeedbackByQuestionId[qid] ? aiFeedbackByQuestionId[qid] : null;
+            if (questionFeedback && questionFeedback.feedback) {
+                feedbackDiv.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="flex-shrink-0 w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
+                            <svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-bold text-purple-700 uppercase tracking-wider mb-1">AI Insight</p>
+                            <p class="text-slate-600 text-sm leading-relaxed">${escapeHtml(questionFeedback.feedback)}</p>
+                        </div>
+                    </div>
+                `;
+            } else if (aiReviewLoading) {
+                // Keep spinner while chunks are still running
+                feedbackDiv.innerHTML = `
+                    <div class="flex items-center gap-2 text-slate-500">
+                        <div class="ai-loading-spinner-small"></div>
+                        <span class="text-sm">Generating AI feedback...</span>
+                    </div>
+                `;
+            }
+        }
+        
+        card.appendChild(feedbackDiv);
+    });
+}
+
+window.generateAIReview = generateAIReview;
 
 function renderDetailedReview() {
     const container = document.getElementById('detailed-review');
@@ -790,6 +1270,13 @@ function returnHome() {
     score = 0;
     userAnswers = [];
     flaggedQuestions = [];
+    aiReviewData = null;
+    aiReviewLoading = false;
+    aiReviewError = null;
+    aiOverallLoading = false;
+    aiChunksTotal = 0;
+    aiChunksDone = 0;
+    aiFeedbackByQuestionId = {};
     clearInterval(timerInterval);
     
     // Show start screen

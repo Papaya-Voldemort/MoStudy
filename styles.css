@@ -293,9 +293,14 @@ header, .bg-white, [style*="background-color: var(--color-bg)"] {
   display: none !important;
 }
 
-/* Hide quiz when review or results are shown */
-#quiz-interface.hidden {
+/* Hide review nav button when results screen is visible */
+#review-nav-btn.hidden {
   display: none !important;
+}
+
+/* Review grid button only visible during quiz */
+#quiz-interface:not(.hidden) #review-nav-btn:not(.hidden) {
+  display: flex;
 }
 
 /* Mobile review screen optimizations */
@@ -1268,4 +1273,175 @@ button, a, input[type="button"], input[type="submit"] {
 [data-theme="dark"] #detailed-review .border-red-200 {
   border-color: var(--color-border) !important;
   background-color: rgba(255, 107, 107, 0.1) !important;
+}
+
+/* Ensure Tailwind's `.hidden` cannot be overridden by ID selectors (mobile CSS) */
+.hidden {
+  display: none !important;
+}
+
+/* ===== AI REVIEW STYLES ===== */
+.ai-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.ai-loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#ai-summary-panel {
+  animation: fadeInUp 0.5s ease-out;
+}
+
+#ai-summary-panel ul,
+#ai-summary-panel ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ai-feedback-section {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Dark mode AI summary panel */
+[data-theme="dark"] #ai-summary-panel {
+  background: linear-gradient(135deg, var(--color-light-bg) 0%, rgba(99, 102, 241, 0.1) 100%) !important;
+  border-color: var(--color-border) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .text-slate-800,
+[data-theme="dark"] #ai-summary-panel .text-slate-700,
+[data-theme="dark"] #ai-summary-panel .text-slate-600,
+[data-theme="dark"] #ai-summary-panel .text-slate-500 {
+  color: var(--color-text) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .border-slate-200 {
+  border-color: var(--color-border) !important;
+}
+
+/* Dark mode AI feedback strengths/weaknesses boxes */
+[data-theme="dark"] #ai-summary-panel .bg-green-50 {
+  background-color: rgba(81, 207, 102, 0.1) !important;
+  border-color: rgba(81, 207, 102, 0.2) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .bg-green-50 .text-green-800,
+[data-theme="dark"] #ai-summary-panel .bg-green-50 .text-green-700 {
+  color: var(--color-success) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .bg-red-50 {
+  background-color: rgba(255, 107, 107, 0.1) !important;
+  border-color: rgba(255, 107, 107, 0.2) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .bg-red-50 .text-red-800,
+[data-theme="dark"] #ai-summary-panel .bg-red-50 .text-red-700 {
+  color: var(--color-danger) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .bg-blue-50 {
+  background-color: rgba(0, 144, 255, 0.1) !important;
+  border-color: rgba(0, 144, 255, 0.2) !important;
+}
+
+[data-theme="dark"] #ai-summary-panel .bg-blue-50 .text-blue-800,
+[data-theme="dark"] #ai-summary-panel .bg-blue-50 .text-blue-700 {
+  color: var(--color-primary) !important;
+}
+
+/* Dark mode AI feedback in question cards */
+[data-theme="dark"] .ai-feedback-section {
+  border-color: var(--color-border) !important;
+}
+
+[data-theme="dark"] .ai-feedback-section .text-slate-600,
+[data-theme="dark"] .ai-feedback-section .text-slate-500,
+[data-theme="dark"] .ai-feedback-section .text-slate-400 {
+  color: var(--color-muted) !important;
+}
+
+[data-theme="dark"] .ai-feedback-section .text-purple-700 {
+  color: #a78bfa !important;
+}
+
+[data-theme="dark"] .ai-loading-spinner,
+[data-theme="dark"] .ai-loading-spinner-small {
+  border-color: var(--color-border);
+  border-top-color: var(--color-primary);
+}
+
+/* Mobile responsive AI styles */
+@media (max-width: 640px) {
+  #ai-summary-panel {
+    padding: 1rem !important;
+  }
+
+  #ai-summary-panel .grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #ai-summary-panel .bg-green-50,
+  #ai-summary-panel .bg-red-50,
+  #ai-summary-panel .bg-blue-50 {
+    padding: 0.875rem !important;
+  }
+
+  #ai-summary-panel h4 {
+    font-size: 1rem;
+  }
+
+  #ai-summary-panel h5 {
+    font-size: 0.8125rem;
+  }
+
+  #ai-summary-panel p,
+  #ai-summary-panel li {
+    font-size: 0.8125rem;
+  }
+
+  #ai-summary-panel .w-10 {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  #ai-summary-panel .w-10 svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .ai-feedback-section {
+    margin-top: 0.75rem !important;
+    padding-top: 0.75rem !important;
+  }
+
+  .ai-feedback-section .text-sm {
+    font-size: 0.75rem;
+  }
+
+  .ai-feedback-section .w-6 {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .ai-feedback-section .w-6 svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
 }
