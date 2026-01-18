@@ -1,3 +1,10 @@
+// Initialize DarkReader
+DarkReader.enable({
+    brightness: 100,
+    contrast: 90,
+    sepia: 10
+});
+
 // --- CATALOG ---
 const catalog = [
     {
@@ -152,7 +159,6 @@ const startError = document.getElementById('start-error');
 
 // --- UI INIT ---
 function initializeApp() {
-    initializeTheme();
     
     // Only continue if we are on a page with quiz elements
     if (!catalogGrid || !startScreen) {
@@ -168,38 +174,6 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
     initializeApp();
-}
-
-// --- THEME SYSTEM ---
-function initializeTheme() {
-    const savedTheme = localStorage.getItem('motest-theme') || 'light';
-    setTheme(savedTheme);
-}
-
-function setTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('motest-theme', theme);
-    updateThemeIcons(theme);
-}
-
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-}
-
-function updateThemeIcons(theme) {
-    const sunIcon = document.getElementById('sun-icon');
-    const moonIcon = document.getElementById('moon-icon');
-    if (sunIcon && moonIcon) {
-        if (theme === 'dark') {
-            sunIcon.classList.remove('hidden');
-            moonIcon.classList.add('hidden');
-        } else {
-            sunIcon.classList.add('hidden');
-            moonIcon.classList.remove('hidden');
-        }
-    }
 }
 
 function setupEventListeners() {

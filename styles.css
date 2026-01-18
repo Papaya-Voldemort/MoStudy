@@ -21,22 +21,6 @@
   --font-main: 'Inter', system-ui, sans-serif;
 }
 
-[data-theme="dark"] {
-  --color-primary: #0090ff;
-  --color-primary-dark: #0073cc;
-  --color-secondary: #00e5cc;
-  --color-secondary-dark: #00d1a7;
-  --color-white: #ffffff;
-  --color-bg: #0a0e27;
-  --color-text: #e8ecf1;
-  --color-muted: #a0aec0;
-  --color-light-bg: #161b36;
-  --color-hover-bg: #1f2747;
-  --color-border: #2d3748;
-  --color-danger: #ff6b6b;
-  --color-success: #51cf66;
-}
-
 body { 
   font-family: var(--font-main);
   background-color: var(--color-bg);
@@ -169,29 +153,6 @@ header, .bg-white, [style*="background-color: var(--color-bg)"] {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
 }
 
-/* Dark mode option buttons */
-[data-theme="dark"] #options-container button {
-  background-color: var(--color-light-bg) !important;
-  border-color: var(--color-border) !important;
-  color: var(--color-text) !important;
-}
-
-[data-theme="dark"] #options-container button span {
-  color: var(--color-text) !important;
-}
-
-[data-theme="dark"] #options-container button:hover {
-  background-color: var(--color-hover-bg) !important;
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 15px rgba(0, 144, 255, 0.2) !important;
-}
-
-[data-theme="dark"] #options-container button.border-blue-600 {
-  background-color: rgba(0, 144, 255, 0.1) !important;
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 4px 12px rgba(0, 144, 255, 0.3) !important;
-}
-
 /* ===== MOBILE NUMBER PAD STYLES ===== */
 #mobile-number-pad {
   animation: slideInUp 0.3s ease-out;
@@ -209,22 +170,6 @@ header, .bg-white, [style*="background-color: var(--color-bg)"] {
 
 #mobile-number-pad button:active {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] #mobile-number-pad {
-  background-color: var(--color-light-bg) !important;
-  border-color: var(--color-border) !important;
-}
-
-[data-theme="dark"] #mobile-number-pad button {
-  background-color: var(--color-primary) !important;
-  color: white !important;
-  box-shadow: 0 2px 8px rgba(0, 144, 255, 0.2) !important;
-}
-
-[data-theme="dark"] #mobile-number-pad button:hover {
-  background-color: var(--color-primary-dark) !important;
-  box-shadow: 0 4px 12px rgba(0, 144, 255, 0.4) !important;
 }
 
 /* ===== MOBILE NUMBER PAD STYLES ===== */
@@ -358,21 +303,6 @@ header, .bg-white, [style*="background-color: var(--color-bg)"] {
 }
 
 /* Dark mode review screen */
-[data-theme="dark"] #review-screen .bg-white {
-  background: linear-gradient(135deg, #161b36 0%, #1f2747 100%) !important;
-  color: var(--color-text) !important;
-}
-
-[data-theme="dark"] #review-screen {
-  background-color: #161b36 !important;
-}
-
-[data-theme="dark"] #results-screen {
-  background-color: #0a0e27 !important;
-  color: var(--color-text) !important;
-}
-
-
 @media (max-width: 640px) {
   /* Body and main */
   body {

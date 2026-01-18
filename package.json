@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "build": "echo 'No build required'",
+    "dev": "npx serve ."
+  },
+  "dependencies": {
+    "darkreader": "^4.9.119",
+    "express": "^5.2.1",
+    "express-oauth2-jwt-bearer": "^1.7.3",
+    "firebase-admin": "^12.5.0"
+  }
+}
