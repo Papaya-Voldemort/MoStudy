@@ -1,6 +1,11 @@
 // Global auth0 instance
-// TODO: Add database endpoints
 let auth0Client = null;
+
+// Global user settings
+window.userSettings = {
+    emailNotifications: true,
+    timerAlerts: true
+};
 
 const fetchAuthConfig = () => {
     return {
@@ -18,7 +23,7 @@ const configureClient = async () => {
         cacheLocation: 'localstorage',
         authorizationParams: {
             audience: config.audience,
-            redirect_uri: window.location.origin + "/account"
+            redirect_uri: window.location.origin + "/account.html"
         }
     });
 };
@@ -56,33 +61,47 @@ const apiRequest = async (path, options = {}) => {
 };
 
 const loadSettings = async () => {
-    const { emailToggle, timerToggle } = getSettingsElements();
-    if (!emailToggle || !timerToggle) return;
+    try {
+        const response = await apiRequest('/api/user-settings');
+        if (!response.ok) {
+            console.warn('Failed to load settings from server');
+            return;
+        }
 
-    const response = await apiRequest('/api/user-settings');
-    if (!response.ok) {
-        throw new Error('Failed to load settings');
+        const data = await response.json();
+        window.userSettings = {
+            emailNotifications: data.emailNotifications ?? true,
+            timerAlerts: data.timerAlerts ?? true
+        };
+
+        const { emailToggle, timerToggle } = getSettingsElements();
+        if (emailToggle) emailToggle.checked = Boolean(window.userSettings.emailNotifications);
+        if (timerToggle) timerToggle.checked = Boolean(window.userSettings.timerAlerts);
+    } catch (error) {
+        console.error('Settings load error:', error);
     }
-
-    const data = await response.json();
-    emailToggle.checked = Boolean(data.emailNotifications);
-    timerToggle.checked = Boolean(data.timerAlerts);
 };
 
 const saveSettings = async () => {
     const { emailToggle, timerToggle } = getSettingsElements();
     if (!emailToggle || !timerToggle) return;
 
-    const response = await apiRequest('/api/user-settings', {
-        method: 'POST',
-        body: JSON.stringify({
-            emailNotifications: emailToggle.checked,
-            timerAlerts: timerToggle.checked
-        })
-    });
+    window.userSettings = {
+        emailNotifications: emailToggle.checked,
+        timerAlerts: timerToggle.checked
+    };
 
-    if (!response.ok) {
-        throw new Error('Failed to save settings');
+    try {
+        const response = await apiRequest('/api/user-settings', {
+            method: 'POST',
+            body: JSON.stringify(window.userSettings)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save settings');
+        }
+    } catch (error) {
+        console.error('Settings save error:', error);
     }
 };
 
@@ -111,7 +130,7 @@ const updateUI = async () => {
     
     if (!btn) return;
 
-    // Clone button to remove old event listeners if any (though we are setting onclick)
+    // Clone button to remove old event listeners
     const newBtn = btn.cloneNode(true);
     btn.parentNode.replaceChild(newBtn, btn);
 
@@ -120,12 +139,8 @@ const updateUI = async () => {
         newBtn.innerHTML = `<span>Sign Out (${user.name || user.email})</span>`;
         newBtn.onclick = logout;
         setSettingsEnabled(true);
-        try {
-            await loadSettings();
-            bindSettingsListeners();
-        } catch (error) {
-            console.error('Settings load error:', error);
-        }
+        await loadSettings();
+        bindSettingsListeners();
     } else {
         newBtn.innerHTML = `
         <svg class="h-6 w-6" viewBox="0 0 24 24">
