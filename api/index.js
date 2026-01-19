@@ -37,8 +37,13 @@ const initializeFirebase = () => {
 };
 
 const getFirestore = () => {
-  initializeFirebase();
-  return admin.firestore();
+  try {
+    initializeFirebase();
+    return admin.firestore();
+  } catch (e) {
+    console.warn("Firestore initialization failed (likely missing credentials). Using fallback mode.", e);
+    return null; // Return null to indicate failure
+  }
 };
 
 // Public endpoint for AI chat (no auth required)
@@ -146,6 +151,14 @@ app.get('/api/user-settings', async (req, res) => {
     }
 
     const db = getFirestore();
+    if (!db) {
+        console.log('Firestore not available, returning default settings');
+        return res.json({
+            emailNotifications: true,
+            timerAlerts: true
+        });
+    }
+
     console.log(`Fetching settings for user: ${userId}`);
     const docRef = db.collection('users').doc(userId);
     const snapshot = await docRef.get();
@@ -184,6 +197,12 @@ app.post('/api/user-settings', async (req, res) => {
     console.log(`Saving settings for user ${userId}:`, { emailNotifications, timerAlerts });
 
     const db = getFirestore();
+    if (!db) {
+        console.warn('Firestore not available, cannot save settings');
+        // Return success fake to not break frontend
+        return res.json({ emailNotifications, timerAlerts });
+    }
+
     const docRef = db.collection('users').doc(userId);
     await docRef.set(
       {

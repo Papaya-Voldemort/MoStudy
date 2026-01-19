@@ -389,30 +389,71 @@ function showStartError(message) {
     startError.classList.remove('hidden');
 }
 
-function startQuiz() {
+async function startQuiz() {
+    const configCountVal = document.getElementById('config-question-count')?.value || "100";
+    const configAIVal = parseInt(document.getElementById('config-ai-questions')?.value || "0");
+
     if (!currentTest || questionsSource.length === 0) {
         showStartError("Select a test before starting the exam.");
         return;
     }
 
-    // Randomize entire pool and select up to 100 questions
-    const shuffled = [...questionsSource].sort(() => Math.random() - 0.5);
-    questions = shuffled.slice(0, 100);
+    const startBtn = document.getElementById('start-btn');
+    const startIcon = document.getElementById('start-btn-icon');
+    const startSpinner = document.getElementById('start-btn-spinner');
 
-    // Reset
-    userAnswers = new Array(questions.length).fill(null);
-    flaggedQuestions = new Array(questions.length).fill(false);
-    currentQuestionIndex = 0;
-    timeLeft = currentTest.timeLimitSeconds || 3000;
-    startTime = Date.now();
+    if (startBtn) startBtn.disabled = true;
+    if (startIcon) startIcon.classList.add('hidden');
+    if (startSpinner) startSpinner.classList.remove('hidden');
 
-    startScreen.classList.add('hidden');
-    quizInterface.classList.remove('hidden');
-    timerDisplay.classList.remove('hidden');
-    reviewNavBtn.classList.remove('hidden');
+    try {
+        let pool = [...questionsSource];
 
-    renderQuestion();
-    startTimer();
+        if (configAIVal > 0) {
+            try {
+                const count = Math.min(Math.max(1, configAIVal), 20);
+                const aiQuestions = await fetchAIQuestions(currentTest.title, count);
+                if (aiQuestions && aiQuestions.length > 0) {
+                    pool = [...aiQuestions, ...pool];
+                }
+            } catch (e) {
+                console.error("AI Fetch Error", e);
+            }
+        }
+
+        const shuffled = pool.sort(() => Math.random() - 0.5);
+        
+        let limit = 100;
+        if (configCountVal === 'all') limit = pool.length;
+        else limit = parseInt(configCountVal);
+        
+        questions = shuffled.slice(0, Math.min(limit, pool.length));
+
+        // Reset
+        userAnswers = new Array(questions.length).fill(null);
+        flaggedQuestions = new Array(questions.length).fill(false);
+        currentQuestionIndex = 0;
+        timeLeft = currentTest.timeLimitSeconds || 3000;
+        startTime = Date.now();
+
+        if (typeof testDetailsContainer !== 'undefined') testDetailsContainer.classList.add('hidden');
+        // Legacy fallback
+        if (typeof startScreen !== 'undefined') startScreen.classList.add('hidden');
+
+        quizInterface.classList.remove('hidden');
+        if (typeof timerDisplay !== 'undefined') timerDisplay.classList.remove('hidden');
+        if (typeof reviewNavBtn !== 'undefined') reviewNavBtn.classList.remove('hidden');
+
+        renderQuestion();
+        startTimer();
+    } catch (e) {
+        console.error("Start Quiz Error:", e);
+        showStartError("An error occurred starting the quiz.");
+    } finally {
+        if (startBtn) startBtn.disabled = false;
+        if (startIcon) startIcon.classList.remove('hidden');
+        if (startSpinner) startSpinner.classList.add('hidden');
+    }
 }
 
 function startTimer() {
@@ -787,33 +828,50 @@ async function generateAIReview() {
 
     const overallSystem = {
         role: "system",
-        content: `You are an FBLA Test Reviewer AI.
+        content: `You are an FBLA Test Reviewer AI. Be RIGOROUS and CRITICAL in your analysis.
 Rules (strict): Output JSON only. No markdown, no code fences, no extra text.
+
+IMPORTANT: Apply realistic, professional-level standards:
+- Scores above 80% are EXCEPTIONAL (not typical)
+- Scores 70-80% indicate solid competency
+- Scores 60-70% indicate adequate but concerning performance
+- Scores below 60% indicate significant gaps
+- If weaknesses outnumber strengths, acknowledge this clearly
+- If no meaningful strengths are present, write: "No clear strengths identified"
+- Be specific about gaps and limitations in understanding
+
 Return ONLY this schema:
 {
   "overall_review": {
     "overall_score": <number 0-100>,
-    "summary": "<2-3 sentences>",
-    "strengths": ["<string>", "<string>"] ,
-    "weaknesses": ["<string>", "<string>"] ,
-    "next_steps": ["<string>", "<string>", "<string>"]
+    "summary": "<2-3 sentences assessing actual performance level>",
+    "strengths": ["<string - be specific and honest>", "<string>"] ,
+    "weaknesses": ["<string - specific gaps to address>", "<string - specific gaps to address>"] ,
+    "next_steps": ["<actionable, specific step>", "<actionable, specific step>", "<actionable, specific step>"]
   }
 }
-Keep it concise and actionable.`
+Keep it concise, realistic, and actionable. If performance is weak, don't sugarcoat it.`
     };
 
     const chunkSystem = {
         role: "system",
-        content: `You are an FBLA Test Reviewer AI.
+        content: `You are an FBLA Test Reviewer AI. Be RIGOROUS and CRITICAL.
 Rules (strict): Output JSON only. No markdown, no code fences, no extra text.
+
+IMPORTANT: Apply realistic standards:
+- Correct answers deserve specific feedback on WHY they were correct and what concept they tested
+- Incorrect answers deserve specific, detailed feedback on what was missed and why
+- Identify conceptual gaps, not just surface-level errors
+- Be direct about misunderstandings
+- For flagged questions (marked as tricky), provide extra analysis of why the student struggled
+
 Return ONLY this schema:
 {
   "questions_review": [
-    {"question_id": <number>, "is_correct": <boolean>, "feedback": "<1-2 sentences>"}
+    {"question_id": <number>, "is_correct": <boolean>, "feedback": "<specific 1-2 sentence feedback identifying what was missed or what shows understanding>"}
   ]
 }
-Provide feedback for EVERY question provided, including correct ones.
-If a question has "flagged": true, treat it as the student marking it as tricky/important and tailor feedback to be extra actionable.`
+Provide feedback for EVERY question provided, including correct ones. Be specific and educational but also honest about gaps.`
     };
 
     const overallInput = {
@@ -1043,7 +1101,7 @@ function renderAISummaryPanel() {
                     Strengths
                 </h5>
                 <ul class="space-y-1">
-                    ${strengths.map(s => `<li class="text-green-700 text-sm flex items-start gap-2"><span class="text-green-400 mt-1">•</span>${escapeHtml(s)}</li>`).join('')}
+                    ${strengths && strengths.length > 0 ? strengths.map(s => `<li class="text-green-700 text-sm flex items-start gap-2"><span class="text-green-400 mt-1">•</span>${escapeHtml(s)}</li>`).join('') : '<li class="text-green-600 text-sm italic">No clear strengths identified</li>'}
                 </ul>
             </div>
             <div class="bg-red-50 rounded-xl p-4 border border-red-100">
@@ -1054,7 +1112,7 @@ function renderAISummaryPanel() {
                     Areas to Improve
                 </h5>
                 <ul class="space-y-1">
-                    ${weaknesses.map(w => `<li class="text-red-700 text-sm flex items-start gap-2"><span class="text-red-400 mt-1">•</span>${escapeHtml(w)}</li>`).join('')}
+                    ${weaknesses && weaknesses.length > 0 ? weaknesses.map(w => `<li class="text-red-700 text-sm flex items-start gap-2"><span class="text-red-400 mt-1">•</span>${escapeHtml(w)}</li>`).join('') : '<li class="text-red-600 text-sm italic">No weaknesses identified</li>'}
                 </ul>
             </div>
         </div>
@@ -1333,5 +1391,70 @@ function playTimerAlert() {
         oscillator.stop(audioCtx.currentTime + 0.5);
     } catch (e) {
         console.error("Failed to play timer alert sound:", e);
+    }
+}
+
+// ==================== AI FUNCTIONS ====================
+
+const AI_API_ENDPOINT = "/api/ai/chat";
+
+async function callAI(messages, expectJson = false) {
+    const requestBody = {
+        messages: messages,
+        temperature: expectJson ? 0 : 0.7
+    };
+    
+    try {
+        const response = await fetch(AI_API_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`AI Request failed: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.content || data.message || "";
+    } catch (error) {
+        console.error("AI Call failed:", error);
+        throw error;
+    }
+}
+
+async function fetchAIQuestions(topic, count) {
+    const prompt = `Generate ${count} multiple-choice questions for an FBLA (Future Business Leaders of America) objective test on the topic: "${topic}".
+
+For each question:
+1. Provide the question text.
+2. Provide 4 options (A, B, C, D).
+3. Identify the correct answer index (0-3).
+4. Assign a specific sub-category/topic.
+
+Output purely a valid JSON array of objects.
+Format:
+[
+  {
+    "text": "Question text?",
+    "options": ["Op1", "Op2", "Op3", "Op4"],
+    "correct": 0,
+    "category": "Sub-topic"
+  }
+]
+Do not utilize markdown formatting or code blocks. Return ONLY the raw JSON string.`;
+
+    try {
+        const response = await callAI([ // eslint-disable-next-line
+            { role: "system", content: "You are an expert test question generator. Output valid JSON only." },
+            { role: "user", content: prompt }
+        ], true);
+        
+        // Clean response if it contains markdown code blocks
+        let cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("Error parsing AI questions", e);
+        return [];
     }
 }

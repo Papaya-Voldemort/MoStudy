@@ -6,6 +6,7 @@
     <title>MoStudy - Role Plays</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="styles.css">
     <style>
         /* Role Play specific styles */
@@ -115,10 +116,10 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-grow relative overflow-y-auto p-4 flex justify-center scroll-smooth" style="background-color: var(--color-bg);">
+    <main class="flex-grow relative overflow-y-auto p-4 pb-24 flex justify-center scroll-smooth" style="background-color: var(--color-bg);">
         
         <!-- Event Selection Screen -->
-        <div id="event-selection-screen" class="max-w-4xl w-full mx-auto my-auto fade-in-page">
+        <div id="event-selection-screen" class="max-w-7xl w-full mx-auto my-auto fade-in-page">
             <div class="text-center mb-10">
                 <h2 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Role Play Practice</h2>
                 <p class="text-slate-500">Select an event to practice. AI will generate a unique scenario based on real FBLA examples.</p>
@@ -133,6 +134,84 @@
                     <div class="ai-loading-spinner"></div>
                     <p class="text-slate-500">Loading available events...</p>
                 </div>
+            </div>
+        </div>
+
+        <!-- Difficulty Selection Screen -->
+        <div id="difficulty-selection-screen" class="hidden max-w-2xl w-full mx-auto my-auto fade-in-page">
+            <div class="text-center mb-10">
+                <h2 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Select Difficulty Level</h2>
+                <p class="text-slate-500">This determines the complexity of your scenario and how critical the judges will be.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+                <!-- Easy -->
+                <button id="diff-easy" onclick="selectDifficulty('easy')" class="difficulty-card bg-white border-2 border-emerald-200 hover:border-emerald-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <!-- Star (friendly, approachable) -->
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" stroke="none" aria-hidden="true"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.453a1 1 0 00-.364 1.118l1.286 3.957c.3.922-.755 1.688-1.54 1.118l-3.37-2.453a1 1 0 00-1.176 0l-3.37 2.453c-.784.57-1.839-.196-1.54-1.118l1.286-3.957a1 1 0 00-.364-1.118L2.11 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69L11.049 2.927z"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-emerald-700 mb-2 text-center">Easy</h3>
+                    <p class="text-slate-500 text-sm">Straightforward scenario with a clear challenge. Judges are supportive and focus on fundamentals.</p>
+                </button>
+
+                <!-- Normal -->
+                <button id="diff-normal" onclick="selectDifficulty('normal')" class="difficulty-card bg-white border-2 border-blue-200 hover:border-blue-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 text-blue-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <!-- Check badge (reliable, standard) -->
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10v10H7z"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-blue-700 mb-2 text-center">Normal</h3>
+                    <p class="text-slate-500 text-sm">Balanced scenario similar to official FBLA examples. Judges expect solid analysis and presentation.</p>
+                </button>
+
+                <!-- Hard -->
+                <button id="diff-hard" onclick="selectDifficulty('hard')" class="difficulty-card bg-white border-2 border-orange-200 hover:border-orange-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-orange-50 text-orange-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <!-- Lightning (fast, intense) -->
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-orange-700 mb-2 text-center">Hard</h3>
+                    <p class="text-slate-500 text-sm">Multi-layered scenario with competing priorities. Judges are highly critical and look for advanced solutions.</p>
+                </button>
+
+                <!-- Impossible -->
+                <button id="diff-impossible" onclick="selectDifficulty('impossible')" class="difficulty-card bg-white border-2 border-red-200 hover:border-red-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
+                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-red-50 text-red-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <!-- Crown (elite, expert) -->
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l3 7 4-4 4 4 3-7v18H5V3z"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-red-700 mb-2 text-center">Impossible</h3>
+                    <p class="text-slate-500 text-sm">Expert-level scenario with complex, ambiguous problems. Judges are strict and expect creative, thorough solutions.</p>
+                </button>
+            </div>
+
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                <h4 class="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Q&A Timing
+                </h4>
+                <p class="text-blue-800 text-sm mb-3">Choose when to generate Q&A questions:</p>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="qa-timing" value="before" checked onchange="setQATiming('before')" class="w-4 h-4">
+                        <span class="text-blue-900">Generate Q&A before recording (recommended)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="qa-timing" value="after" onchange="setQATiming('after')" class="w-4 h-4">
+                        <span class="text-blue-900">Generate after my presentation</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-4">
+                <button id="start-scenario-btn" onclick="confirmRoleplayConfig()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-blue-500/20 transition transform hover:-translate-y-0.5 text-lg flex items-center justify-center gap-2 opacity-50 cursor-not-allowed" disabled>
+                    <span>Start Roleplay Scenario</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                </button>
+                <button onclick="goBackEventSelection()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-xl transition">
+                    Back to Event Selection
+                </button>
             </div>
         </div>
 
