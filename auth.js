@@ -23,7 +23,7 @@ const configureClient = async () => {
         cacheLocation: 'localstorage',
         authorizationParams: {
             audience: config.audience,
-            redirect_uri: window.location.origin + "/account.html"
+            redirect_uri: window.location.origin + "/account"
         }
     });
 };
@@ -177,7 +177,7 @@ const login = async () => {
 const logout = () => {
     auth0Client.logout({
         logoutParams: {
-            returnTo: window.location.origin + "/account.html"
+            returnTo: window.location.origin + "/account"
         }
     });
 };
@@ -191,7 +191,7 @@ window.addEventListener('load', async () => {
     if (query.includes("code=") && query.includes("state=")) {
         try {
             await auth0Client.handleRedirectCallback();
-            window.history.replaceState({}, document.title, "/account.html");
+            window.history.replaceState({}, document.title, "/account");
         } catch (e) {
             console.error("Callback Error:", e);
         }
