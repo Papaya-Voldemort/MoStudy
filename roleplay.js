@@ -6,15 +6,11 @@
 // ==================== CONFIGURATION ====================
 
 const AI_API_ENDPOINT = "/api/ai/chat";
-// Updated to GPT-5.1 for better conversational flow (Judges) and reasoning (Scenarios)
-const AI_MODEL = "openai/gpt-5.1"; 
+// Updated to Google Gemini 3 Flash Preview as requested
+const AI_MODEL = "google/gemini-3-flash-preview"; 
 
-const SCENARIO_WORD_LIMITS = {
-    easy: 220,
-    normal: 280,
-    hard: 350,
-    impossible: 420
-};
+// Role plays should feel like official FBLA difficulty (no user difficulty selector).
+const SCENARIO_TARGET_WORDS = 380;
 
 // Timer configurations (in seconds)
 const PLANNING_TIME = 20 * 60; // 20 minutes
@@ -201,30 +197,189 @@ let appState = {
     presentationTimeLeft: PRESENTATION_TIME,
     qaTimeLeft: QA_TIME,
     currentTimer: null,
-    
-    // Speech recognition
-    recognition: null,
+
+    // Recording
     isRecording: false,
     recordingTarget: null,
 
-    // Audio capture (optional)
-    audioStream: null,
+    // Speech-to-text (browser)
+    recognition: null,
+    mainInterimTranscript: "",
+    qaInterimTranscript: "",
+
+    // Audio capture
+    micRecorder: null,
     mediaRecorder: null,
+    recordingBackend: null, // 'mp3' | 'media'
     audioChunks: [],
-    audioMimeType: null,
+    // Correct MP3 MIME type
+    audioMimeType: 'audio/mpeg',
     mainAudioBlob: null,
     qaAudioBlob: null,
     mainAudioBase64: null,
     qaAudioBase64: null,
+    mainAudioMimeType: null,
+    qaAudioMimeType: null,
     audioProcessingPromise: null,
 
     // Scenario generation UI
     generationStatusInterval: null,
-    
-    // Difficulty and Q&A settings
-    difficulty: 'normal', // 'easy', 'normal', 'hard', 'impossible'
+
+    // Q&A settings
     qaTiming: 'before' // 'before' or 'after'
 };
+
+// ==================== AUTH HELPER ====================
+
+/**
+ * Check if the user is authenticated and enforce login if not.
+ * Shows a lock modal if valid session is not found.
+ */
+async function checkLoginStatus() {
+    // Wait for auth initialization
+    // Check if already initialized
+    if (!window.authInitialized) {
+        // Wait up to 10 seconds for auth-initialized event
+        try {
+            await Promise.race([
+                new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
+                // Increased to 20s to be safe on slow connections
+                new Promise((_, reject) => setTimeout(() => reject('timeout'), 20000))
+            ]);
+        } catch (e) {
+            console.warn("Auth initialization timed out, checking client directly.");
+        }
+    }
+    
+    // Check authentication
+    const client = window.auth0Client;
+
+    if (client) {
+        try {
+            const isAuthenticated = await client.isAuthenticated();
+            if (!isAuthenticated) {
+                // Double check if we can silently login?
+                try {
+                    await client.getTokenSilently({
+                        authorizationParams: {
+                            audience: "https://mostudy.org/api"
+                        }
+                    });
+                    // If this succeeds, we ARE authenticated, just state wasn't updated
+                    console.log("Recovered session via silent token");
+                } catch(e) {
+                    // Genuine auth failure
+                    showLoginLock();
+                }
+            } else {
+                 console.log("User verified authenticated");
+            }
+        } catch (e) {
+            console.error("Auth check failed:", e);
+            showLoginLock();
+        }
+    } else {
+        console.warn("Auth client not initialized, locking UI.");
+        showLoginLock();
+    }
+}
+
+function showLoginLock() {
+    const modal = document.getElementById('login-lock-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // Prevent scrolling
+    }
+}
+
+// Check auth specifically for Roleplay page
+window.addEventListener('load', () => {
+    // Delay slightly to ensure auth0 has time to process potential redirects
+    setTimeout(checkLoginStatus, 1000);
+});
+
+/**
+ * Get auth token for API requests.
+ * Returns null if not authenticated.
+ */
+async function getAuthToken() {
+    // If not initialized, wait for it
+    if (!window.authInitialized) {
+        console.log("Waiting for auth initialization before getting token...");
+        try {
+            await Promise.race([
+                new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
+                new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
+            ]);
+        } catch (e) {
+            console.warn("Auth init wait timed out in getAuthToken");
+        }
+    }
+
+    try {
+        const client = window.auth0Client;
+        if (client) {
+            // Check if authenticated first
+            const isAuthenticated = await client.isAuthenticated();
+            if (!isAuthenticated) return null;
+
+            return await client.getTokenSilently({
+                authorizationParams: {
+                    audience: "https://mostudy.org/api"
+                },
+                // Force a check if we suspect the token is bad
+                cacheMode: 'on-fast' 
+            });
+        }
+    } catch (e) {
+        console.error('CRITICAL: Failed to get auth token:', e);
+        // If it's a 'login_required' error, we should return null so the UI can lock
+        if (e.error === 'login_required' || e.error === 'consent_required') {
+            return null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Save roleplay report to Firestore via the backend API.
+ * Updates the local cache with the returned data.
+ */
+async function saveRoleplayReport(totalScore, judgeResults) {
+    // Only save if cache helper is available
+    if (typeof MoStudyCache === 'undefined') {
+        console.warn('Cache helper not available, skipping roleplay report save');
+        return;
+    }
+
+    try {
+        // Build category scores from judge evaluations
+        const categoryScores = {};
+        const scoreKeys = ['understanding', 'alternatives', 'solution', 'knowledge', 'organization', 'delivery', 'questions'];
+        
+        scoreKeys.forEach(key => {
+            const scores = judgeResults
+                .map(r => r.evaluation?.scores?.[key] || 0)
+                .filter(s => s > 0);
+            if (scores.length > 0) {
+                categoryScores[key] = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+            }
+        });
+
+        const reportData = {
+            event: appState.currentEvent?.title || 'Unknown',
+            difficulty: 'official',
+            judgeScore: totalScore,
+            categoryScores
+        };
+
+        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'roleplay', reportData);
+        console.log('Roleplay report saved successfully');
+    } catch (error) {
+        console.error('Failed to save roleplay report:', error);
+        // Non-blocking - user can still see results
+    }
+}
 
 // ==================== EVENT CATALOG ====================
 
@@ -257,7 +412,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeApp() {
     loadEventCatalog();
-    initializeSpeechRecognition();
+    bindRoleplayActions();
+    bindRoleplayInputs();
+}
+
+function bindRoleplayActions() {
+    document.addEventListener('click', (event) => {
+        const actionTarget = event.target.closest('[data-action]');
+        if (!actionTarget) return;
+
+        const action = actionTarget.dataset.action;
+        switch (action) {
+            case 'start-scenario':
+                confirmRoleplayConfig();
+                break;
+            case 'back-event-selection':
+                goBackEventSelection();
+                break;
+            case 'start-presentation':
+                startPresentation();
+                break;
+            case 'end-presentation':
+                endMainPresentation();
+                break;
+            case 'end-qa':
+                endQARecording();
+                break;
+            case 'show-judge-sheet': {
+                const index = Number(actionTarget.dataset.judgeIndex);
+                if (Number.isInteger(index)) showJudgeSheet(index);
+                break;
+            }
+            case 'start-new-session':
+                startNewSession();
+                break;
+            case 'return-home':
+                window.location.href = '/';
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+function bindRoleplayInputs() {
+    const qaTimingInputs = document.querySelectorAll('input[name="qa-timing"]');
+    qaTimingInputs.forEach((input) => {
+        input.addEventListener('change', (event) => {
+            setQATiming(event.target.value);
+        });
+    });
+
+    const noteInput = document.getElementById('note-card-input');
+    if (noteInput) {
+        noteInput.addEventListener('input', updateCharCount);
+    }
 }
 
 function loadEventCatalog() {
@@ -308,48 +517,10 @@ function loadEventCatalog() {
 
 async function selectEvent(event) {
     appState.currentEvent = event;
-    appState.difficulty = null; // Reset difficulty
-    
-    // Reset selection UI
-    document.querySelectorAll('.difficulty-card').forEach(el => {
-        el.classList.remove('ring-4', 'ring-offset-2', 'ring-blue-500', 'bg-slate-50', 'is-selected');
-        el.setAttribute('aria-pressed', 'false');
-    });
-    const startBtn = document.getElementById('start-scenario-btn');
-    if(startBtn) {
-        startBtn.disabled = true;
-        startBtn.classList.add('opacity-50', 'cursor-not-allowed');
-    }
-
-    // Show difficulty selection screen
-    showScreen('difficulty-selection-screen');
-}
-
-function selectDifficulty(difficulty) {
-    appState.difficulty = difficulty;
-    
-    // Update UI
-    document.querySelectorAll('.difficulty-card').forEach(el => {
-        el.classList.remove('ring-4', 'ring-offset-2', 'ring-blue-500', 'bg-slate-50', 'is-selected');
-        el.setAttribute('aria-pressed', 'false');
-    });
-    
-    const selectedBtn = document.getElementById(`diff-${difficulty}`);
-    if (selectedBtn) {
-        selectedBtn.classList.add('ring-4', 'ring-offset-2', 'ring-blue-500', 'bg-slate-50', 'is-selected');
-        selectedBtn.setAttribute('aria-pressed', 'true');
-    }
-
-    // Enable start button
-    const startBtn = document.getElementById('start-scenario-btn');
-    if(startBtn) {
-        startBtn.disabled = false;
-        startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-    }
+    startScenarioGeneration();
 }
 
 function confirmRoleplayConfig() {
-    if (!appState.difficulty) return;
     startScenarioGeneration();
 }
 
@@ -400,7 +571,9 @@ async function startScenarioGeneration() {
         console.error('Error starting session:', error);
         // Determine error type
         let errorMsg = 'Failed to generate scenario. ';
-        if (error.message.includes('AI service')) {
+        if (error.message.toLowerCase().includes('sign in')) {
+            errorMsg = 'Sign in is required to use AI roleplay features. Please sign in from the Account page.';
+        } else if (error.message.includes('AI service')) {
             errorMsg += 'The AI service is currently unavailable. Please try again in a moment.';
         } else if (error.message.includes('403') || error.message.includes('Preflight')) {
             errorMsg += 'Connection error with AI service. Please check your network or try again later.';
@@ -419,22 +592,42 @@ async function startScenarioGeneration() {
 }
 
 function showErrorNotification(message) {
-    const errorHtml = `
-        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;" onclick="this.remove();">
-            <div style="background: white; border-radius: 12px; padding: 2rem; max-width: 450px; text-align: center; box-shadow: 0 20px 25px rgba(0,0,0,0.15);">
-                <div style="width: 3rem; height: 3rem; background: #fee2e2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; color: #dc2626;">
-                    <svg xmlns="http://www.w3.org/2000/svg" style="width: 1.5rem; height: 1.5rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                </div>
-                <h3 style="font-size: 1.25rem; font-weight: bold; color: #1f2937; margin-bottom: 0.5rem;">Unable to Start Session</h3>
-                <p style="color: #6b7280; margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5;">${escapeHtml(message)}</p>
-                <button onclick="this.closest('[style*=position]').remove();" style="background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
-                    Dismiss
-                </button>
-            </div>
-        </div>
+    const overlay = document.createElement('div');
+    overlay.className = 'error-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'error-modal';
+    modal.addEventListener('click', (event) => event.stopPropagation());
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'error-modal-icon';
+    iconWrap.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
     `;
-    
-    document.body.insertAdjacentHTML('beforeend', errorHtml);
+
+    const title = document.createElement('h3');
+    title.className = 'error-modal-title';
+    title.textContent = 'Unable to Start Session';
+
+    const messageEl = document.createElement('p');
+    messageEl.className = 'error-modal-message';
+    messageEl.textContent = message;
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'error-modal-button';
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.addEventListener('click', () => overlay.remove());
+
+    modal.appendChild(iconWrap);
+    modal.appendChild(title);
+    modal.appendChild(messageEl);
+    modal.appendChild(dismissBtn);
+    overlay.appendChild(modal);
+
+    overlay.addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
 }
 
 async function loadEventExamples(event) {
@@ -485,28 +678,24 @@ async function generateScenario() {
         const shuffled = [...appState.eventExamples].sort(() => Math.random() - 0.5);
         const selectedExamples = shuffled.slice(0, Math.min(3, shuffled.length));
         
-        // REPLACED: Positive constraints that guide the AI instead of confusing it
-        const difficultyGuides = {
-            easy: "SCOPE: Focus on a small local business with a single, clear operational problem (e.g., staffing, inventory, or basic customer service). RISK: Low financial stakes.",
-            normal: "SCOPE: Focus on a regional manager dealing with a tactical tradeoff between two good options. RISK: Moderate budget implications.",
-            hard: "SCOPE: Focus on a national executive facing a PR crisis or complex merger. RISK: High stakes with ethical or legal complications.",
-            impossible: "SCOPE: Focus on a multinational CEO during a market collapse or hostile takeover. RISK: Company survival is at stake with conflicting regulatory requirements."
-        };
-        
         const systemPrompt = `You are an expert FBLA Role Play scenario designer.
 TARGET EVENT: ${appState.currentEvent.title}
-DIFFICULTY: ${appState.difficulty.toUpperCase()}
-GUIDE: ${difficultyGuides[appState.difficulty]}
+DIFFICULTY: Official FBLA competitive level (fair, realistic, and solvable in 20 minutes planning + 7 minutes presentation).
 
 INSTRUCTIONS:
-1. Create a realistic business scenario.
-2. GEOGRAPHY: Unless the event specifically requires international trade, set the scenario entirely within the United States to reduce complexity.
+1. Create a realistic business scenario that matches the event and sounds like an official FBLA prompt.
+2. Include concrete details (company size, constraints, stakeholders, a few data points) but keep it solvable.
 3. STRUCTURE: You must output headers exactly as: **Background Information**, **Scenario**, **Other Useful Information**, **Requirements**.
-4. LENGTH: Keep the total output concise (approx ${SCENARIO_WORD_LIMITS[appState.difficulty]} words).
-5. REQUIREMENTS: Provide exactly 3 bullet points in the Requirements section that the student must address.`;
+4. LENGTH: Aim for ~${SCENARIO_TARGET_WORDS} words (complete, not overly long).
+5. REQUIREMENTS: Provide exactly 3 bullet points in the Requirements section that the student must address.
+6. Make the scenario self-contained: include any needed numbers, dates, and constraints in the prompt.`;
 
-        const userPrompt = `Create a NEW scenario. Do not copy the examples. 
-Reference Examples:
+        const userPrompt = `Create a NEW scenario. Do not copy the examples.
+
+    Event overview (if present):
+    ${appState.eventOverview || '(No overview provided)'}
+
+    Reference Examples:
 ${selectedExamples.map((ex, i) => `--- EX ${i + 1} ---\n${ex.substring(0, 150)}...`).join('\n')}
 
 Generate the scenario now.`;
@@ -554,9 +743,9 @@ function startGenerationStatusLoop() {
     const steps = [
         "Reviewing event examples",
         "Drafting the scenario",
-        "Refining constraints",
-        "Balancing difficulty",
-        "Finalizing requirements"
+        "Adding realistic constraints",
+        "Finalizing requirements",
+        "Quality check"
     ];
 
     let index = 0;
@@ -825,35 +1014,42 @@ function initializeSpeechRecognition() {
 }
 
 function startRecording(target) {
-    if (!appState.recognition) {
-        console.error('Speech recognition not available');
-        return;
-    }
-    
     appState.isRecording = true;
     appState.recordingTarget = target; // 'main' or 'qa'
-    
-    try {
-        appState.recognition.start();
-    } catch (e) {
-        console.warn('Recognition already started:', e);
-    }
-
+    // Live transcription is a fallback when audio input isn't supported server-side.
+    initializeSpeechRecognition();
+    startSpeechRecognition();
     startAudioCapture(target);
+    // Update UI immediately (audio-only mode)
+    updateTranscript('', '');
 }
 
 function stopRecording() {
-    appState.isRecording = false;
-    
-    if (appState.recognition) {
-        try {
-            appState.recognition.stop();
-        } catch (e) {
-            console.warn('Could not stop recognition:', e);
-        }
-    }
-
+    // IMPORTANT: stopAudioCapture relies on recording state; stop it first.
     stopAudioCapture();
+    // Stop STT without triggering auto-restart.
+    appState.isRecording = false;
+    stopSpeechRecognition();
+    updateTranscript('', '');
+}
+
+function startSpeechRecognition() {
+    if (!appState.recognition) return;
+    try {
+        // Starting twice throws in some browsers.
+        appState.recognition.start();
+    } catch (e) {
+        // no-op
+    }
+}
+
+function stopSpeechRecognition() {
+    if (!appState.recognition) return;
+    try {
+        appState.recognition.stop();
+    } catch (e) {
+        // no-op
+    }
 }
 
 async function ensureAudioStream() {
@@ -877,65 +1073,149 @@ function getSupportedAudioMimeType() {
     return '';
 }
 
+function getAudioFormatFromMime(mimeType) {
+    const mt = String(mimeType || '').toLowerCase();
+    if (mt.includes('audio/mpeg') || mt.includes('audio/mp3')) return 'mp3';
+    if (mt.includes('audio/webm')) return 'webm';
+    if (mt.includes('audio/ogg')) return 'ogg';
+    return 'mp3';
+}
+
 async function startAudioCapture(target) {
-    if (!('MediaRecorder' in window)) return;
-
-    const stream = await ensureAudioStream();
-    if (!stream) return;
-
+    appState.recordingTarget = target;
+    appState.audioProcessingPromise = null;
+    appState.recordingBackend = null;
     appState.audioChunks = [];
-    const mimeType = getSupportedAudioMimeType();
-    appState.audioMimeType = mimeType || null;
-
+    
     try {
-        appState.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    } catch (error) {
-        console.warn('MediaRecorder init failed:', error);
-        appState.mediaRecorder = null;
-        return;
-    }
+        // Explicitly request microphone stream first to ensure permission and wake up devices
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Keep the stream reference so we can stop tracks later.
+        appState.audioStream = stream;
 
-    appState.mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-            appState.audioChunks.push(event.data);
+        // Prefer MP3 encoder if available.
+        try {
+            if (!appState.micRecorder) {
+                // Initialize MicRecorder (lamejs must be loaded)
+                // @ts-ignore
+                appState.micRecorder = new MicRecorder({
+                    bitRate: 128
+                });
+            }
+
+            await appState.micRecorder.start();
+            appState.isRecording = true;
+            appState.recordingBackend = 'mp3';
+            appState.audioMimeType = 'audio/mpeg';
+            console.log('MP3 Recording started for:', target);
+            return;
+        } catch (e) {
+            console.warn('MP3 recorder failed, falling back to MediaRecorder:', e);
         }
-    };
 
-    appState.audioProcessingPromise = new Promise((resolve) => {
-        appState.mediaRecorder.onstop = async () => {
-            if (!appState.audioChunks.length) {
-                resolve();
-                return;
-            }
-            const blob = new Blob(appState.audioChunks, { type: appState.audioMimeType || 'audio/webm' });
-            const base64 = await blobToBase64(blob);
+        // Fallback: MediaRecorder (webm/ogg)
+        const mimeType = getSupportedAudioMimeType();
+        const mr = mimeType
+            ? new MediaRecorder(stream, { mimeType })
+            : new MediaRecorder(stream);
+        appState.mediaRecorder = mr;
+        appState.recordingBackend = 'media';
+        appState.audioMimeType = mr.mimeType || mimeType || '';
 
-            if (target === 'main') {
-                appState.mainAudioBlob = blob;
-                appState.mainAudioBase64 = base64;
-            } else if (target === 'qa') {
-                appState.qaAudioBlob = blob;
-                appState.qaAudioBase64 = base64;
+        mr.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                appState.audioChunks.push(event.data);
             }
-            resolve();
         };
-    });
 
-    try {
-        appState.mediaRecorder.start();
+        mr.start();
+        appState.isRecording = true;
+        console.log('MediaRecorder started for:', target, '| mime:', appState.audioMimeType);
+
     } catch (error) {
-        console.warn('MediaRecorder start failed:', error);
+        console.error('Failed to start MP3 recording:', error);
+        alert('Could not access microphone. Please ensure you have granted permission.');
     }
 }
 
 function stopAudioCapture() {
-    if (appState.mediaRecorder && appState.mediaRecorder.state === 'recording') {
-        try {
-            appState.mediaRecorder.stop();
-        } catch (error) {
-            console.warn('MediaRecorder stop failed:', error);
+    // Prevent double-stop.
+    if (appState.audioProcessingPromise) return;
+
+    const target = appState.recordingTarget;
+
+    const stopTracks = () => {
+        if (appState.audioStream) {
+            appState.audioStream.getTracks().forEach(track => track.stop());
+            appState.audioStream = null;
         }
+    };
+
+    const saveBlob = async (blob) => {
+        const base64 = await blobToBase64(blob);
+        if (target === 'main') {
+            appState.mainAudioBlob = blob;
+            appState.mainAudioBase64 = base64;
+            appState.mainAudioMimeType = blob.type || appState.audioMimeType || 'audio/mpeg';
+            console.log('Main audio processed:', blob.size, 'bytes | mime:', appState.mainAudioMimeType);
+        } else if (target === 'qa') {
+            appState.qaAudioBlob = blob;
+            appState.qaAudioBase64 = base64;
+            appState.qaAudioMimeType = blob.type || appState.audioMimeType || 'audio/mpeg';
+            console.log('Q&A audio processed:', blob.size, 'bytes | mime:', appState.qaAudioMimeType);
+        }
+    };
+
+    // MP3 path
+    if (appState.recordingBackend === 'mp3' && appState.micRecorder) {
+        appState.audioProcessingPromise = appState.micRecorder.stop().getMp3()
+            .then(async ([buffer, blob]) => {
+                stopTracks();
+                await saveBlob(blob);
+                return { buffer, blob };
+            })
+            .catch((e) => {
+                console.error('Failed to stop/encode MP3:', e);
+            })
+            .finally(() => {
+                appState.recordingBackend = null;
+            });
+        return;
     }
+
+    // MediaRecorder fallback path
+    if (appState.mediaRecorder && appState.mediaRecorder.state !== 'inactive') {
+        const mr = appState.mediaRecorder;
+        appState.audioProcessingPromise = new Promise((resolve) => {
+            mr.addEventListener('stop', async () => {
+                try {
+                    const blob = new Blob(appState.audioChunks, { type: mr.mimeType || appState.audioMimeType || '' });
+                    stopTracks();
+                    await saveBlob(blob);
+                    resolve();
+                } catch (e) {
+                    console.error('Failed to process MediaRecorder audio:', e);
+                    resolve();
+                } finally {
+                    appState.mediaRecorder = null;
+                    appState.audioChunks = [];
+                    appState.recordingBackend = null;
+                }
+            }, { once: true });
+        });
+
+        try {
+            mr.stop();
+        } catch (e) {
+            console.warn('MediaRecorder stop failed:', e);
+            stopTracks();
+        }
+        return;
+    }
+
+    // Nothing to stop.
+    stopTracks();
 }
 
 function blobToBase64(blob) {
@@ -955,43 +1235,61 @@ function blobToBase64(blob) {
     });
 }
 
-function getAudioPayload() {
-    // Temporarily disabled to avoid PayloadTooLargeError
-    // Audio capture still runs but is not sent to API
+function getAudioPayload(target) {
+    // Return the base64 audio for the specific target
+    if (target === 'main' && appState.mainAudioBase64) {
+        return {
+            mimeType: appState.mainAudioMimeType || 'audio/mpeg',
+            format: getAudioFormatFromMime(appState.mainAudioMimeType || 'audio/mpeg'),
+            data: appState.mainAudioBase64
+        };
+    }
+    if (target === 'qa' && appState.qaAudioBase64) {
+        return {
+             mimeType: appState.qaAudioMimeType || 'audio/mpeg',
+             format: getAudioFormatFromMime(appState.qaAudioMimeType || 'audio/mpeg'),
+             data: appState.qaAudioBase64
+        };
+    }
     return null;
-    
-    // Original code kept for future re-enabling:
-    // if (!appState.mainAudioBase64 && !appState.qaAudioBase64) return null;
-    // return {
-    //     mimeType: appState.audioMimeType || 'audio/webm',
-    //     main: appState.mainAudioBase64,
-    //     qa: appState.qaAudioBase64
-    // };
 }
 
 function updateTranscript(finalText, interimText) {
     const target = appState.recordingTarget;
+    const container = document.getElementById(target === 'main' ? 'main-transcript' : 'qa-transcript');
     
-    if (target === 'main') {
-        appState.mainTranscript += finalText;
-        const container = document.getElementById('main-transcript');
-        if (container) {
-            container.innerHTML = `
-                <span class="text-slate-800">${escapeHtml(appState.mainTranscript)}</span>
-                <span class="text-slate-400 italic">${escapeHtml(interimText)}</span>
-            `;
-            container.scrollTop = container.scrollHeight;
+    if (container) {
+        if (target === 'main') {
+            if (finalText) appState.mainTranscript += finalText;
+            appState.mainInterimTranscript = interimText || '';
+        } else if (target === 'qa') {
+            if (finalText) appState.qaTranscript += finalText;
+            appState.qaInterimTranscript = interimText || '';
         }
-    } else if (target === 'qa') {
-        appState.qaTranscript += finalText;
-        const container = document.getElementById('qa-transcript');
-        if (container) {
-            container.innerHTML = `
-                <span class="text-slate-800">${escapeHtml(appState.qaTranscript)}</span>
-                <span class="text-slate-400 italic">${escapeHtml(interimText)}</span>
-            `;
-            container.scrollTop = container.scrollHeight;
-        }
+
+        const full = target === 'main' ? (appState.mainTranscript || '') : (appState.qaTranscript || '');
+        const interim = target === 'main' ? (appState.mainInterimTranscript || '') : (appState.qaInterimTranscript || '');
+        const audioBlob = target === 'main' ? appState.mainAudioBlob : appState.qaAudioBlob;
+        const mime = target === 'main' ? (appState.mainAudioMimeType || appState.audioMimeType) : (appState.qaAudioMimeType || appState.audioMimeType);
+
+        const header = appState.isRecording
+            ? `<div class="flex items-center gap-2 text-blue-600 animate-pulse mb-2">
+                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span>Recording…</span>
+               </div>`
+            : `<div class="text-green-600 font-semibold mb-2">Recording saved.</div>`;
+
+        const transcriptHtml = (full || interim)
+            ? `<div class="text-slate-700 leading-relaxed">
+                    ${escapeHtml(full)}${interim ? `<span class="text-slate-400">${escapeHtml(interim)}</span>` : ''}
+               </div>`
+            : `<div class="text-slate-400 italic">(No transcript captured — audio will be used if supported.)</div>`;
+
+        const audioMeta = audioBlob
+            ? `<div class="text-xs text-slate-500 mt-2">Audio: ${Math.round(audioBlob.size / 1024)} KB (${escapeHtml(mime || 'unknown')})</div>`
+            : '';
+
+        container.innerHTML = `${header}${transcriptHtml}${audioMeta}`;
     }
 }
 
@@ -1044,37 +1342,28 @@ async function generateQAQuestionsBeforePresentation() {
     // This generates questions BEFORE the presentation starts
     // Questions are based on the scenario only
     try {
-        const difficultyModifiers = {
-            easy: "Generate fair but accessible follow-up questions that test basic understanding. Be encouraging.",
-            normal: "Generate standard probing follow-up questions that test depth of thinking and analysis.",
-            hard: "Generate challenging follow-up questions that probe weaknesses and test advanced reasoning. Be critical but professional.",
-            impossible: "Generate extremely challenging follow-up questions designed to expose gaps in knowledge and critical thinking. Be rigorous and demanding."
-        };
-        
         const systemPrompt = `You are an FBLA competition judge preparing questions about a role play scenario.
 
-DIFFICULTY LEVEL: ${appState.difficulty.toUpperCase()}
-${difficultyModifiers[appState.difficulty]}
+DIFFICULTY LEVEL: Official FBLA competitive level (fair, realistic, probing).
 
 CRITICAL RULES:
 1. Generate exactly 2 follow-up questions based on the scenario
-2. Questions should test understanding of the business situation and encourage deep analysis
+2. Questions should test tradeoffs, risks, implementation details, and scenario-specific constraints
 3. Output ONLY a JSON array of questions, nothing else
 
 Example output format:
 ["How would the proposed solution account for currency fluctuation risks?", "What specific timeline would be realistic for implementation?"]`;
 
-        const userPrompt = `Based on the following ${appState.currentEvent.title} role play scenario, generate 2-3 follow-up questions that could be asked of a competitor:
+        const userPrompt = `Based on the following ${appState.currentEvent.title} role play scenario, generate exactly 2 follow-up questions that could be asked of a competitor:
 
 SCENARIO:
 ${appState.generatedScenario}
-
-Generate probing follow-up questions at the ${appState.difficulty} difficulty level that test deep understanding of the situation.`;
+`;
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
-        ], true);
+        ], true, { jsonType: 'array' });
         
         // Parse questions
         let questions;
@@ -1119,62 +1408,72 @@ async function generateQAQuestions() {
         questionsList.innerHTML = `
             <div class="flex items-center gap-3 text-indigo-600">
                 <div class="ai-loading-spinner w-5 h-5"></div>
-                <span>Generating follow-up questions...</span>
+                <span>Listening to your presentation and generating follow-up questions...</span>
             </div>
         `;
     }
+
+    // Wait for audio processing if needed
+    if (appState.audioProcessingPromise) {
+        await appState.audioProcessingPromise;
+    }
     
     try {
-        // Difficulty-based judge persona for Q&A
-        const difficultyModifiers = {
-            easy: "Generate fair but accessible follow-up questions that test basic understanding. Be encouraging.",
-            normal: "Generate standard probing follow-up questions that test depth of thinking and analysis.",
-            hard: "Generate challenging follow-up questions that probe weaknesses and test advanced reasoning. Be critical but professional.",
-            impossible: "Generate extremely challenging follow-up questions designed to expose gaps in knowledge and critical thinking. Be rigorous and demanding."
-        };
+        // Polished prompt logic
+        const systemPrompt = `You are an expert FBLA competition judge. Your goal is to ask insightful, probing follow-up questions based on the student's presentation.
+
+CONTEXT:
+Event: ${appState.currentEvent.title}
+Roleplay Scenario: Provided in user message.
+User Presentation: Provided as transcript text and may include audio.
+
+TASK:
+Read the student's transcript (and optionally listen to audio if provided) and generate exactly 2 follow-up questions.
+These questions should:
+1. Challenge the student's proposed solution.
+2. Address potential weak points or overlooked areas in their presentation.
+3. Be professional but demanding (Normal/FBLA State Competition Level).
+
+OUTPUT FORMAT:
+Return ONLY a JSON array of strings.
+Example: ["Question 1?", "Question 2?"]`;
+
+        const audioPayload = getAudioPayload('main');
+        const transcript = (appState.mainTranscript || '').trim();
         
-        const systemPrompt = `You are an FBLA competition judge asking follow-up questions after a role play presentation.
+        const content = [
+            { type: "text", text: `SCENARIO:\n${appState.generatedScenario}\n\nSTUDENT PRESENTATION (TRANSCRIPT):\n${transcript || '(No transcript captured)'}\n\nGenerate 2 follow-up questions that reference what they said (tradeoffs, risks, implementation details).` }
+        ];
 
-DIFFICULTY LEVEL: ${appState.difficulty.toUpperCase()}
-${difficultyModifiers[appState.difficulty]}
-
-CRITICAL RULES:
-1. Provide feedback in the third person. Never introduce yourself.
-2. Generate exactly 2 follow-up questions based on the presentation
-3. Questions should probe deeper into the presented solutions
-4. Output ONLY a JSON array of questions, nothing else
-
-Example output format:
-["How would the proposed solution account for currency fluctuation risks?", "What specific timeline would be realistic for implementation?"]`;
-
-        const userPrompt = `The participant just presented the following response to a ${appState.currentEvent.title} role play scenario:
-
-SCENARIO:
-${appState.generatedScenario}
-
-PARTICIPANT'S PRESENTATION TRANSCRIPT:
-${appState.mainTranscript || "(No verbal response recorded)"}
-
-Generate 2-3 follow-up questions a judge would ask at the ${appState.difficulty} difficulty level.`;
+        if (audioPayload) {
+             content.push({
+                type: "input_audio",
+                input_audio: {
+                    data: audioPayload.data,
+                    format: audioPayload.format || "mp3"
+                }
+             });
+        } else {
+            content[0].text += "\n\n(No audio was recorded. Generate generic questions based on the scenario.)";
+        }
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-        ], true);
+            { role: "user", content: content }
+        ], true, { jsonType: 'array' });
         
         // Parse questions
         let questions;
         try {
             questions = JSON.parse(response);
         } catch {
-            // Try to extract array from response
             const match = response.match(/\[[\s\S]*\]/);
             if (match) {
                 questions = JSON.parse(match[0]);
             } else {
                 questions = [
-                    "Could you elaborate on the implementation timeline for your proposed solution?",
-                    "What resources would be needed to execute your plan effectively?"
+                    "Could you elaborate on the implementation timeline?",
+                    "What specific resources are required for your plan?"
                 ];
             }
         }
@@ -1185,7 +1484,6 @@ Generate 2-3 follow-up questions a judge would ask at the ${appState.difficulty}
         
     } catch (error) {
         console.error('Error generating Q&A questions:', error);
-        // Use fallback questions
         appState.qaQuestions = [
             "Could you elaborate on the key challenges you identified?",
             "What would be your first step in implementing the proposed solution?"
@@ -1292,92 +1590,85 @@ async function runJudgeEvaluation(judge, index) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
     
     try {
-        // SAFETY NET: Check if transcript exists before asking AI
-        const transcript = (appState.mainTranscript || "").trim();
-        const isTranscriptEmpty = transcript.length < 50;
-
-        if (isTranscriptEmpty) {
-            console.warn(`Judge ${index+1} skipped: No audio transcript detected.`);
-            // Return a "Technical Error" card instead of a bad score
-            appState.judgeResults[index] = {
-                judge: judge,
-                evaluation: {
-                    scores: { understanding: 0, alternatives: 0, solution: 0, knowledge: 0, organization: 0, delivery: 0, questions: 0 },
-                    total: 0,
-                    categoryFeedback: {},
-                    overallFeedback: "No audio was detected for your presentation. This usually happens if the microphone permission was denied or the browser didn't capture the speech text.",
-                    strengthHighlight: "N/A",
-                    improvementArea: "Microphone Setup",
-                    personalizedFeedback: "I couldn't hear your presentation. Please check your microphone settings and try again.",
-                    actionableTips: ["Check browser microphone permissions", "Try a different browser", "Speak clearly into the mic"]
-                },
-                error: true
-            };
-            // Update UI to show error color
-            if (judgeProgressItems[index]) {
-                judgeProgressItems[index].innerHTML = `
-                    <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                    </svg>
-                    <span class="text-sm text-gray-500">Audio Missing</span>
-                `;
-            }
-            return;
+        // Prepare audio payloads
+        const mainAudio = getAudioPayload('main');
+        const qaAudio = getAudioPayload('qa');
+        const mainTranscriptText = (appState.mainTranscript || '').trim();
+        const qaTranscriptText = (appState.qaTranscript || '').trim();
+        
+        // Safety check: Ensure we have at least main audio (or this is a test/debug run)
+        // MOLEARN MODIFICATION: Allow empty audio to be sent to model (user override)
+        if (!mainAudio && !qaAudio) {
+             console.warn(`Judge ${index+1}: No audio detected, but proceeding with empty payload.`);
         }
 
-        // ... Existing difficulty/persona logic ...
+        const effectiveMainAudio = mainAudio || { data: "", mimeType: "audio/mpeg", format: "mp3" };
+        
         const judgeVoices = {
-            'Dr. Margaret Chen': 'You are analytical. Focus on theory.',
-            'Marcus Williams': 'You are direct. Focus on ROI and action.',
-            'Dr. Yuki Tanaka': 'You are diplomatic. Focus on cultural nuance.',
-            'Robert Martinez': 'You are precise. Focus on regulations.',
-            'Sarah O\'Brien': 'You are creative. Focus on innovation.',
-            'Dr. Kwame Asante': 'You are data-driven. Focus on economics.',
-            'Jennifer Park': 'You are operational. Focus on logistics.',
-            'David Thompson': 'You are an educator. Focus on student growth.',
-            'Dr. Aisha Patel': 'You are strategic. Focus on branding.',
-            'Michael Chang': 'You are a VC. Focus on scalability.'
+            'Dr. Margaret Chen': 'You are analytical and theory-focused.',
+            'Marcus Williams': 'You are ROI-driven and direct.',
+            'Dr. Yuki Tanaka': 'You focus on cultural nuance and respect.',
+            'Robert Martinez': 'You are legalistic and precise.',
+            'Sarah O\'Brien': 'You value innovation and creativity.',
+            'Dr. Kwame Asante': 'You focus on economic data.',
+            'Jennifer Park': 'You focus on operational logistics.',
+            'David Thompson': 'You are a supportive educator.',
+            'Dr. Aisha Patel': 'You focus on brand strategy.',
+            'Michael Chang': 'You focus on scalability and profit.'
         };
         
         const judgeVoice = judgeVoices[judge.name] || 'You give balanced, constructive feedback.';
         
         const systemPrompt = `You are ${judge.name}, ${judge.title}. 
 PERSONALITY: ${judgeVoice}
-TASK: Judge an FBLA role play.
+    TASK: Judge an FBLA role play based on the MP3 audio provided (audio/mpeg).
 
 RUBRIC (Max 100):
-- Understanding (10)
-- Alternatives (20)
-- Solution (20)
-- Knowledge (20)
-- Organization (10)
-- Delivery (10)
-- Questions (10)
+- Understanding (10): Did they grasp the problem?
+- Alternatives (20): Did they offer options?
+- Solution (20): Was the solution logical/feasible?
+- Knowledge (20): Did they use business terms correctly?
+- Organization (10): Was the flow logical?
+- Delivery (10): Confidence, voice, pacing (Judge based on audio).
+- Questions (10): How well did they answer user questions?
 
 OUTPUT JSON:
 {
     "scores": { "understanding": 0, "alternatives": 0, "solution": 0, "knowledge": 0, "organization": 0, "delivery": 0, "questions": 0 },
     "total": 0,
     "categoryFeedback": { "understanding": "...", "alternatives": "...", "solution": "...", "knowledge": "...", "organization": "...", "delivery": "...", "questions": "..." },
-    "overallFeedback": "2 sentences.",
+    "overallFeedback": "2-3 sentences.",
     "strengthHighlight": "1 phrase",
     "improvementArea": "1 phrase",
-    "personalizedFeedback": "1 sentence as ${judge.name}",
+    "personalizedFeedback": "1 sentence in character.",
     "actionableTips": ["Tip 1", "Tip 2"]
 }`;
 
-        const userPrompt = `SCENARIO: ${appState.generatedScenario.substring(0, 500)}...
-        
-TRANSCRIPT: "${transcript}"
+        // Build Multi-modal Content
+        const userContent = [
+            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nNOTE: Audio may be included if available and supported.` },
+            { 
+                type: "input_audio", 
+                input_audio: { 
+                    data: effectiveMainAudio.data, 
+                    format: effectiveMainAudio.format || "mp3" 
+                } 
+            }
+        ];
 
-Q&A: ${JSON.stringify(appState.qaQuestions)}
-Q&A RESPONSE: "${appState.qaTranscript}"
-
-Evaluate this as ${judge.name}. Be critical but fair.`;
+        if (qaAudio) {
+             userContent.push({ 
+                type: "input_audio", 
+                input_audio: { 
+                    data: qaAudio.data, 
+                    format: qaAudio.format || "mp3" 
+                } 
+            });
+        }
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
+            { role: "user", content: userContent }
         ], true); // true = expects JSON
 
         // Parse response
@@ -1402,7 +1693,6 @@ Evaluate this as ${judge.name}. Be critical but fair.`;
                 <span class="text-sm text-green-600">Judge ${index + 1}</span>
             `;
         }
-        
     } catch (error) {
         console.error(`Error with judge ${index + 1}:`, error);
         
@@ -1412,32 +1702,28 @@ Evaluate this as ${judge.name}. Be critical but fair.`;
             evaluation: {
                 scores: {
                     understanding: 5,
-                    alternatives: 10,
-                    solution: 10,
-                    knowledge: 10,
+                    alternatives: 5,
+                    solution: 5,
+                    knowledge: 5,
                     organization: 5,
                     delivery: 5,
                     questions: 5
                 },
-                total: 50,
+                total: 35,
                 categoryFeedback: {
-                    understanding: "Evaluation could not be completed fully.",
-                    alternatives: "Evaluation could not be completed fully.",
-                    solution: "Evaluation could not be completed fully.",
-                    knowledge: "Evaluation could not be completed fully.",
-                    organization: "Evaluation could not be completed fully.",
-                    delivery: "Evaluation could not be completed fully.",
-                    questions: "Evaluation could not be completed fully."
+                    understanding: "Error processing evaluation.",
+                    alternatives: "Error processing evaluation.",
+                    solution: "Error processing evaluation.",
+                    knowledge: "Error processing evaluation.",
+                    organization: "Error processing evaluation.",
+                    delivery: "Error processing evaluation.",
+                    questions: "Error processing evaluation."
                 },
-                overallFeedback: "The evaluation encountered an error. Please try again for a complete assessment.",
-                strengthHighlight: "Unable to determine",
-                improvementArea: "Unable to determine",
-                personalizedFeedback: "No personalized feedback available due to an evaluation error.",
-                actionableTips: [
-                    "Retry evaluation for detailed feedback.",
-                    "Provide a clearer structure in your response.",
-                    "Address each requirement directly."
-                ]
+                overallFeedback: "The AI judge encountered an error processing your audio. It might be too long or the format was rejected.",
+                strengthHighlight: "N/A",
+                improvementArea: "N/A",
+                personalizedFeedback: "I'm sorry, I couldn't process your presentation.",
+                actionableTips: ["Try a shorter recording", "Check internet connection"]
             },
             error: true
         };
@@ -1467,6 +1753,9 @@ function displayJudgingResults() {
     );
     
     document.getElementById('total-score').textContent = totalScore;
+    
+    // Save roleplay report to backend (fire and forget)
+    saveRoleplayReport(totalScore, validResults);
     
     // Render judge cards
     const judgeCardsContainer = document.getElementById('judge-cards');
@@ -1624,20 +1913,24 @@ function startNewSession() {
         presentationTimeLeft: PRESENTATION_TIME,
         qaTimeLeft: QA_TIME,
         currentTimer: null,
-        recognition: appState.recognition, // Keep recognition instance
         isRecording: false,
         recordingTarget: null,
+        recognition: appState.recognition,
+        mainInterimTranscript: "",
+        qaInterimTranscript: "",
         audioStream: appState.audioStream,
         mediaRecorder: null,
+        recordingBackend: null,
         audioChunks: [],
-        audioMimeType: null,
+        audioMimeType: 'audio/mpeg',
         mainAudioBlob: null,
         qaAudioBlob: null,
         mainAudioBase64: null,
         qaAudioBase64: null,
+        mainAudioMimeType: null,
+        qaAudioMimeType: null,
         audioProcessingPromise: null,
         generationStatusInterval: null,
-        difficulty: 'normal',
         qaTiming: 'before'
     };
     
@@ -1652,32 +1945,38 @@ function startNewSession() {
 // ==================== UTILITY FUNCTIONS ====================
 
 async function callAI(messages, expectJson = false, options = {}) {
+    const jsonType = options.jsonType || (expectJson ? 'object' : null);
     const requestBody = {
         messages: messages,
-        // CHANGED: Increased temperature for JSON. 
-        // 0.6 allows personality (for judges) while still adhering to structure.
-        // 0.1 was making them too robotic.
         temperature: expectJson ? 0.6 : 0.8, 
         model: AI_MODEL,
-        // Add JSON mode if supported by the provider, otherwise the temperature balance helps
-        response_format: expectJson ? { type: "json_object" } : undefined
+        // Only force strict JSON objects; arrays are better handled by prompt-only.
+        response_format: (expectJson && jsonType === 'object') ? { type: "json_object" } : undefined
     };
     
-    const maxRetries = 3;
+    // Increased retries for robust roleplay experience
+    const maxRetries = 6;
     let lastError;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
+            const token = await getAuthToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+                headers["Authorization"] = `Bearer ${token}`;
+            }
+
             const response = await fetch(AI_API_ENDPOINT, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: headers,
                 body: JSON.stringify(requestBody)
             });
-            
+
             // If rate limited, retry with backoff
             if (response.status === 429) {
                 if (attempt < maxRetries) {
-                    const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+                    const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+                    console.warn(`Rate limit hit. Retrying in ${backoffMs}ms...`);
                     await new Promise(resolve => setTimeout(resolve, backoffMs));
                     continue;
                 }
@@ -1685,7 +1984,12 @@ async function callAI(messages, expectJson = false, options = {}) {
             
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(`API error (${response.status}): ${errorData.error || response.statusText}`);
+                const msg = errorData.message || errorData.error || response.statusText;
+                
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error(`${msg || 'Sign in required to use AI features.'} (Status ${response.status})`);
+                }
+                throw new Error(`API error (${response.status}): ${msg}`);
             }
             
             const data = await response.json();
@@ -1703,7 +2007,7 @@ async function callAI(messages, expectJson = false, options = {}) {
             
             if (attempt < maxRetries) {
                 // Exponential backoff before retry
-                const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+                const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
             }
         }

@@ -7,204 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/mic-recorder-to-mp3@2.2.2/dist/index.min.js"></script>
     <link rel="stylesheet" href="styles.css">
-    <style>
-        /* Role Play specific styles */
-        .roleplay-timer {
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
-        }
-        
-        .note-card {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border: 2px solid #f59e0b;
-            box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        
-        .recording-indicator {
-            animation: pulse-recording 1.5s ease-in-out infinite;
-        }
-        
-        @keyframes pulse-recording {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        .scenario-card {
-            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-            border-left: 4px solid #3b82f6;
-        }
-        
-        .judge-card {
-            transition: all 0.3s ease;
-        }
-        
-        .judge-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-        }
-        
-        .rubric-row {
-            transition: background-color 0.2s ease;
-        }
-        
-        .rubric-row:hover {
-            background-color: #f8fafc;
-        }
-        
-        .progress-step {
-            transition: all 0.3s ease;
-        }
-        
-        .progress-step.active {
-            background-color: #3b82f6;
-            color: white;
-        }
-        
-        .progress-step.completed {
-            background-color: #10b981;
-            color: white;
-        }
-        
-        .transcript-area {
-            font-family: 'Inter', system-ui, sans-serif;
-            line-height: 1.7;
-        }
-        
-        /* Warning states */
-        .timer-warning {
-            background-color: #fef3c7 !important;
-            color: #92400e !important;
-            border-color: #f59e0b !important;
-        }
-        
-        .timer-critical {
-            background-color: #fee2e2 !important;
-            color: #991b1b !important;
-            border-color: #ef4444 !important;
-            animation: pulse-recording 1s ease-in-out infinite;
-        }
-
-        .scenario-generation-shell {
-            position: relative;
-            overflow: hidden;
-            border-radius: 24px;
-            background: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 55%),
-                        radial-gradient(circle at bottom, rgba(99, 102, 241, 0.16), transparent 60%);
-        }
-
-        .scenario-orb {
-            position: absolute;
-            width: 180px;
-            height: 180px;
-            border-radius: 999px;
-            filter: blur(0px);
-            opacity: 0.35;
-            animation: floatOrb 6s ease-in-out infinite;
-        }
-
-        .scenario-orb.orb-one {
-            background: radial-gradient(circle, rgba(59, 130, 246, 0.35), transparent 70%);
-            top: -40px;
-            right: -20px;
-        }
-
-        .scenario-orb.orb-two {
-            background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
-            bottom: -50px;
-            left: -30px;
-            animation-delay: 1.5s;
-        }
-
-        @keyframes floatOrb {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-12px); }
-        }
-
-        .generation-status-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.4rem 0.85rem;
-            border-radius: 999px;
-            background: rgba(59, 130, 246, 0.1);
-            color: #2563eb;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-
-        .generation-shimmer {
-            background: linear-gradient(90deg, rgba(59,130,246,0.15), rgba(99,102,241,0.35), rgba(59,130,246,0.15));
-            background-size: 200% 100%;
-            animation: shimmer 2.2s ease-in-out infinite;
-        }
-
-        .difficulty-card {
-            position: relative;
-        }
-
-        .difficulty-card.is-selected {
-            border-color: #2563eb !important;
-            box-shadow: 0 12px 25px rgba(37, 99, 235, 0.25);
-            background: linear-gradient(180deg, #eff6ff 0%, #ffffff 70%);
-            transform: translateY(-2px);
-        }
-
-        .difficulty-card.is-selected::after {
-            content: "Selected";
-            position: absolute;
-            top: 0.75rem;
-            right: 0.75rem;
-            background: #2563eb;
-            color: #fff;
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 0.2rem 0.55rem;
-            border-radius: 999px;
-            box-shadow: 0 6px 12px rgba(37, 99, 235, 0.25);
-        }
-
-        @media (max-width: 640px) {
-            header nav {
-                gap: 0.75rem;
-                margin-left: 0.5rem;
-                overflow-x: auto;
-                padding-bottom: 0.25rem;
-            }
-
-            .progress-steps {
-                flex-wrap: wrap;
-                gap: 0.5rem;
-            }
-
-            .progress-step {
-                width: 1.75rem;
-                height: 1.75rem;
-                font-size: 0.75rem;
-            }
-
-            #planning-screen,
-            #recording-screen,
-            #qa-screen,
-            #results-screen {
-                padding-top: 0.75rem;
-                padding-bottom: 0.75rem;
-            }
-
-            #scenario-content {
-                max-height: 280px;
-            }
-
-            #planning-screen .p-6,
-            #recording-screen .p-8,
-            #qa-screen .p-8 {
-                padding: 1rem !important;
-            }
-
-            .roleplay-timer {
-                font-size: 1.75rem;
-            }
-        }
-    </style>
+    
 </head>
 <body class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-bg); color: var(--color-text); font-family: var(--font-main);">
 
@@ -230,15 +35,38 @@
             </nav>
         </div>
         <div class="flex items-center gap-2 sm:gap-4 ml-auto">
-            <button id="theme-toggle" class="inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-white/95 border border-white/30 hover:bg-white/15 transition" style="background-color: rgba(255,255,255,0.12);">
+            <button id="theme-toggle" class="theme-toggle inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-white/95 border border-white/30 hover:bg-white/15 transition">
                 <span data-theme-icon>🌙</span>
                 <span data-theme-label class="hidden sm:inline">Dark</span>
             </button>
-            <div id="session-timer" class="hidden roleplay-timer text-sm sm:text-lg font-bold text-white px-3 sm:px-4 py-1.5 rounded-lg min-w-[80px] sm:min-w-[100px] text-center" style="background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);">
+            <div id="session-timer" class="header-timer-strong hidden roleplay-timer text-sm sm:text-lg font-bold text-white px-3 sm:px-4 py-1.5 rounded-lg min-w-[80px] sm:min-w-[100px] text-center">
                 20:00
             </div>
         </div>
     </header>
+
+    <!-- Login Lock Modal -->
+    <div id="login-lock-modal" class="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center border border-slate-200">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-800 mb-2">Login Required</h2>
+            <p class="text-slate-600 mb-8">Access to AI Roleplay Practice requires an account to save your progress and manage generated scenarios.</p>
+            
+            <div class="flex flex-col gap-3">
+                <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-6 rounded-xl transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" class="text-white fill-current"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" class="text-green-200 fill-current opacity-20"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" class="text-orange-200 fill-current opacity-20"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" class="text-red-200 fill-current opacity-20"/></svg>
+                    Sign In to Continue
+                </button>
+                <a href="/" class="text-slate-500 font-semibold hover:text-slate-700 py-2">
+                    Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="flex-grow relative overflow-y-auto p-4 pb-24 flex justify-center scroll-smooth" style="background-color: var(--color-bg);">
@@ -262,102 +90,25 @@
             </div>
         </div>
 
-        <!-- Difficulty Selection Screen -->
-        <div id="difficulty-selection-screen" class="hidden max-w-2xl w-full mx-auto my-auto fade-in-page">
-            <div class="text-center mb-10">
-                <h2 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Select Difficulty Level</h2>
-                <p class="text-slate-500">This determines the complexity of your scenario and how critical the judges will be.</p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
-                <!-- Easy -->
-                <button id="diff-easy" onclick="selectDifficulty('easy')" aria-pressed="false" class="difficulty-card bg-white border-2 border-emerald-200 hover:border-emerald-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
-                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
-                        <!-- Star (friendly, approachable) -->
-                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" stroke="none" aria-hidden="true"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.453a1 1 0 00-.364 1.118l1.286 3.957c.3.922-.755 1.688-1.54 1.118l-3.37-2.453a1 1 0 00-1.176 0l-3.37 2.453c-.784.57-1.839-.196-1.54-1.118l1.286-3.957a1 1 0 00-.364-1.118L2.11 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69L11.049 2.927z"/></svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-emerald-700 mb-2 text-center">Easy</h3>
-                    <p class="text-slate-500 text-sm">Straightforward scenario with a clear challenge. Judges are supportive and focus on fundamentals.</p>
-                </button>
-
-                <!-- Normal -->
-                <button id="diff-normal" onclick="selectDifficulty('normal')" aria-pressed="false" class="difficulty-card bg-white border-2 border-blue-200 hover:border-blue-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
-                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 text-blue-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
-                        <!-- Check badge (reliable, standard) -->
-                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10v10H7z"/></svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-blue-700 mb-2 text-center">Normal</h3>
-                    <p class="text-slate-500 text-sm">Balanced scenario similar to official FBLA examples. Judges expect solid analysis and presentation.</p>
-                </button>
-
-                <!-- Hard -->
-                <button id="diff-hard" onclick="selectDifficulty('hard')" aria-pressed="false" class="difficulty-card bg-white border-2 border-orange-200 hover:border-orange-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
-                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-orange-50 text-orange-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
-                        <!-- Lightning (fast, intense) -->
-                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-orange-700 mb-2 text-center">Hard</h3>
-                    <p class="text-slate-500 text-sm">Multi-layered scenario with competing priorities. Judges are highly critical and look for advanced solutions.</p>
-                </button>
-
-                <!-- Impossible -->
-                <button id="diff-impossible" onclick="selectDifficulty('impossible')" aria-pressed="false" class="difficulty-card bg-white border-2 border-red-200 hover:border-red-500 hover:shadow-lg p-6 rounded-2xl transition group cursor-pointer text-left">
-                    <div class="flex items-center justify-center w-12 h-12 rounded-xl bg-red-50 text-red-700 mx-auto mb-4 group-hover:scale-110 transition-transform">
-                        <!-- Crown (elite, expert) -->
-                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l3 7 4-4 4 4 3-7v18H5V3z"/></svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-red-700 mb-2 text-center">Impossible</h3>
-                    <p class="text-slate-500 text-sm">Expert-level scenario with complex, ambiguous problems. Judges are strict and expect creative, thorough solutions.</p>
-                </button>
-            </div>
-
-            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                <h4 class="font-bold text-blue-900 mb-2 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    Q&A Timing
-                </h4>
-                <p class="text-blue-800 text-sm mb-3">Choose when to generate Q&A questions:</p>
-                <div class="flex gap-4">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="qa-timing" value="before" checked onchange="setQATiming('before')" class="w-4 h-4">
-                        <span class="text-blue-900">Generate Q&A before recording (recommended)</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="qa-timing" value="after" onchange="setQATiming('after')" class="w-4 h-4">
-                        <span class="text-blue-900">Generate after my presentation</span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="flex flex-col gap-4">
-                <button id="start-scenario-btn" onclick="confirmRoleplayConfig()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-blue-500/20 transition transform hover:-translate-y-0.5 text-lg flex items-center justify-center gap-2 opacity-50 cursor-not-allowed" disabled>
-                    <span>Start Roleplay Scenario</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                </button>
-                <button onclick="goBackEventSelection()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-xl transition">
-                    Back to Event Selection
-                </button>
-            </div>
-        </div>
+        <!-- Difficulty Selection Screen (Hidden/Removed functionality, keeping structure for animation logic if needed, but display none) -->
+        <div id="difficulty-selection-screen" class="hidden"></div>
 
         <!-- Scenario Generation Screen -->
-        <div id="scenario-generation-screen" class="hidden max-w-4xl w-full mx-auto my-auto fade-in-page">
-            <div class="scenario-generation-shell flex flex-col items-center justify-center py-16 px-6">
-                <div class="scenario-orb orb-one"></div>
-                <div class="scenario-orb orb-two"></div>
-                <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-6">
-                    <svg class="w-10 h-10 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div id="scenario-generation-screen" class="hidden w-full h-full mx-auto my-auto fade-in-page flex items-center justify-center">
+            <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-12 max-w-md w-full mx-4 text-center">
+                <div class="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-6 animate-pulse">
+                    <svg class="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                     </svg>
                 </div>
-                <h3 class="text-2xl font-bold text-slate-800 mb-2">Generating Your Scenario</h3>
-                <p class="text-slate-500 text-center max-w-md mb-4">Gemini is creating a focused role play scenario based on official FBLA examples...</p>
-                <div class="generation-status-pill mb-5">
-                    <span class="ai-loading-spinner w-4 h-4"></span>
-                    <span id="generation-status">Reviewing event examples</span>
+                <h3 class="text-2xl font-bold text-slate-800 mb-2" style="font-family: var(--font-heading);">Generating Your Scenario</h3>
+                <p class="text-slate-500 text-center mb-6">Creating a focused role play scenario based on official FBLA examples...</p>
+                <div class="flex items-center justify-center gap-2 mb-6">
+                    <div class="ai-loading-spinner w-4 h-4"></div>
+                    <span id="generation-status" class="text-sm font-medium text-slate-600">Reviewing event examples</span>
                 </div>
-                <div class="w-72 h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div id="generation-progress" class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full generation-shimmer" style="width: 0%; transition: width 0.5s ease;"></div>
+                <div class="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div id="generation-progress" class="generation-progress h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full" style="animation: shimmer 2s infinite;"></div>
                 </div>
             </div>
         </div>
@@ -379,9 +130,9 @@
                 <!-- Scenario Display -->
                 <div class="lg:col-span-2">
                     <div class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-                        <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-4">
+                        <div class="p-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);">
                             <div class="flex items-center justify-between">
-                                <h3 class="text-white font-bold text-lg">Your Scenario</h3>
+                                <h3 class="text-white font-bold text-lg" style="font-family: var(--font-heading);">Your Scenario</h3>
                                 <span class="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">Planning Phase</span>
                             </div>
                         </div>
@@ -403,7 +154,7 @@
                         </h4>
                         <div id="planning-timer" class="roleplay-timer text-4xl font-bold text-center text-slate-800 mb-4">20:00</div>
                         <p class="text-slate-500 text-sm text-center mb-4">Timer starts automatically. Use this time wisely!</p>
-                        <button id="start-presentation-btn" onclick="startPresentation()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition flex items-center justify-center gap-2">
+                        <button id="start-presentation-btn" data-action="start-presentation" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition flex items-center justify-center gap-2">
                             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -423,7 +174,7 @@
                             </span>
                             <span id="char-count" class="text-sm font-normal text-amber-700">0/300</span>
                         </h4>
-                        <textarea id="note-card-input" maxlength="300" placeholder="Jot down key points, structure, or reminders..." class="w-full h-32 bg-white/80 border border-amber-300 rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400" oninput="updateCharCount()"></textarea>
+                        <textarea id="note-card-input" maxlength="300" placeholder="Jot down key points, structure, or reminders..." class="w-full h-32 bg-white/80 border border-amber-300 rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
                         <p class="text-amber-700 text-xs mt-2">This is your only reference during the presentation.</p>
                     </div>
                 </div>
@@ -444,10 +195,10 @@
             </div>
 
             <div class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-                <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-6">
+                <div class="p-6" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h3 class="text-white font-bold text-xl mb-1">Presentation Recording</h3>
+                            <h3 class="text-white font-bold text-xl mb-1" style="font-family: var(--font-heading);">Presentation Recording</h3>
                             <p class="text-blue-100 text-sm">Present your response to the scenario</p>
                         </div>
                         <div id="recording-timer" class="roleplay-timer bg-white/20 text-white text-3xl font-bold px-6 py-3 rounded-xl">
@@ -471,22 +222,22 @@
                         <p id="notes-display" class="text-amber-900 text-sm whitespace-pre-wrap">No notes taken.</p>
                     </div>
 
-                    <!-- Live Transcript -->
+                    <!-- Recording Status -->
                     <div class="bg-slate-50 rounded-xl p-6 border border-slate-200">
                         <h4 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
                             <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            Live Transcript
+                            Recording Status
                         </h4>
                         <div id="main-transcript" class="transcript-area min-h-[150px] max-h-[300px] overflow-y-auto text-slate-700">
-                            <span class="text-slate-400 italic">Speak clearly... your words will appear here.</span>
+                            <span class="text-slate-400 italic">Recording audio… Gemini will transcribe and evaluate after you finish.</span>
                         </div>
                     </div>
 
                     <!-- End Early Button -->
                     <div class="mt-6 text-center">
-                        <button onclick="endMainPresentation()" class="text-slate-500 hover:text-slate-700 text-sm font-medium underline">
+                        <button data-action="end-presentation" class="text-slate-500 hover:text-slate-700 text-sm font-medium underline">
                             End presentation early
                         </button>
                     </div>
@@ -508,10 +259,10 @@
             </div>
 
             <div class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-6">
+                <div class="p-6" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h3 class="text-white font-bold text-xl mb-1">Q&A Round</h3>
+                            <h3 class="text-white font-bold text-xl mb-1" style="font-family: var(--font-heading);">Q&A Round</h3>
                             <p class="text-indigo-100 text-sm">Answer the follow-up questions</p>
                         </div>
                         <div id="qa-timer" class="roleplay-timer bg-white/20 text-white text-3xl font-bold px-6 py-3 rounded-xl">
@@ -550,16 +301,16 @@
                             </div>
                         </div>
 
-                        <!-- Live Transcript -->
+                        <!-- Recording Status -->
                         <div class="bg-slate-50 rounded-xl p-6 border border-slate-200">
                             <h4 class="font-bold text-slate-700 mb-3">Your Response</h4>
                             <div id="qa-transcript" class="transcript-area min-h-[100px] max-h-[200px] overflow-y-auto text-slate-700">
-                                <span class="text-slate-400 italic">Speak your answer...</span>
+                                <span class="text-slate-400 italic">Recording audio… Gemini will transcribe and score your answer.</span>
                             </div>
                         </div>
 
                         <div class="mt-6 text-center">
-                            <button onclick="endQARecording()" class="text-slate-500 hover:text-slate-700 text-sm font-medium underline">
+                            <button data-action="end-qa" class="text-slate-500 hover:text-slate-700 text-sm font-medium underline">
                                 Finish Q&A early
                             </button>
                         </div>
@@ -611,7 +362,7 @@
             <!-- Results (Hidden until judging complete) -->
             <div id="judging-results" class="hidden space-y-6">
                 <!-- Total Score Card -->
-                <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-lg p-8 text-white">
+                <div class="bg-gradient-to-br rounded-2xl shadow-lg p-8 text-white" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);">
                     <div class="flex items-center justify-between">
                         <div>
                             <h3 class="text-xl font-bold mb-1">Combined Score</h3>
@@ -638,9 +389,9 @@
                     
                     <!-- Judge Tabs -->
                     <div class="flex border-b border-slate-200">
-                        <button id="tab-judge-1" onclick="showJudgeSheet(0)" class="flex-1 py-3 px-4 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 bg-blue-50">Judge 1</button>
-                        <button id="tab-judge-2" onclick="showJudgeSheet(1)" class="flex-1 py-3 px-4 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50">Judge 2</button>
-                        <button id="tab-judge-3" onclick="showJudgeSheet(2)" class="flex-1 py-3 px-4 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50">Judge 3</button>
+                        <button id="tab-judge-1" data-action="show-judge-sheet" data-judge-index="0" class="flex-1 py-3 px-4 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 bg-blue-50">Judge 1</button>
+                        <button id="tab-judge-2" data-action="show-judge-sheet" data-judge-index="1" class="flex-1 py-3 px-4 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50">Judge 2</button>
+                        <button id="tab-judge-3" data-action="show-judge-sheet" data-judge-index="2" class="flex-1 py-3 px-4 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50">Judge 3</button>
                     </div>
 
                     <div id="scoresheet-content" class="p-6">
@@ -650,13 +401,13 @@
 
                 <!-- Actions -->
                 <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                    <button onclick="startNewSession()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl transition flex items-center justify-center gap-2">
+                    <button data-action="start-new-session" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl transition flex items-center justify-center gap-2">
                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Practice Again
                     </button>
-                    <button onclick="window.location.href='/'" class="bg-white hover:bg-slate-50 text-slate-700 font-bold py-3 px-8 rounded-xl border border-slate-200 transition">
+                    <button data-action="return-home" class="bg-white hover:bg-slate-50 text-slate-700 font-bold py-3 px-8 rounded-xl border border-slate-200 transition">
                         Return Home
                     </button>
                 </div>
@@ -665,6 +416,9 @@
 
     </main>
 
+    <script src="https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js"></script>
+    <script src="auth.js"></script>
+    <script src="cache.js"></script>
     <script src="theme.js" defer></script>
     <script src="roleplay.js"></script>
 </body>

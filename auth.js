@@ -20,12 +20,18 @@ const configureClient = async () => {
     auth0Client = await auth0.createAuth0Client({
         domain: config.domain,
         clientId: config.clientId,
+        // Cookies would be ideal, but Auth0 SPA SDK uses browser storage. Keep localStorage fallback.
         cacheLocation: 'localstorage',
+        useRefreshTokens: true,
+        useRefreshTokensFallback: true,
         authorizationParams: {
             audience: config.audience,
             redirect_uri: window.location.origin + "/account"
         }
     });
+
+    // CRITICAL: Expose to window for other scripts (roleplay.js, app.js)
+    window.auth0Client = auth0Client;
 };
 
 let settingsListenersBound = false;
@@ -185,9 +191,11 @@ const updateUI = async () => {
 
 const login = async () => {
     try {
+        const config = fetchAuthConfig();
         await auth0Client.loginWithRedirect({
             authorizationParams: {
-                connection: 'google-oauth2'
+                connection: 'google-oauth2',
+                audience: config.audience
             }
         });
     } catch(e) {
@@ -197,6 +205,11 @@ const login = async () => {
 };
 
 const logout = () => {
+    // Clear user cache on logout
+    if (typeof MoStudyCache !== 'undefined' && MoStudyCache.clearUserCache) {
+        MoStudyCache.clearUserCache();
+    }
+    
     auth0Client.logout({
         logoutParams: {
             returnTo: window.location.origin + "/account"
@@ -205,19 +218,41 @@ const logout = () => {
 };
 
 // Initialize
-window.addEventListener('load', async () => {
-    await configureClient();
+const initAuth = async () => {
+    if (window.authInitializing) return;
+    window.authInitializing = true;
     
-    // Check for callback
-    const query = window.location.search;
-    if (query.includes("code=") && query.includes("state=")) {
-        try {
-            await auth0Client.handleRedirectCallback();
-            window.history.replaceState({}, document.title, "/account");
-        } catch (e) {
-            console.error("Callback Error:", e);
+    try {
+        await configureClient();
+        
+        // Check for callback
+        const query = window.location.search;
+        if (query.includes("code=") && query.includes("state=")) {
+            try {
+                await auth0Client.handleRedirectCallback();
+                window.history.replaceState({}, document.title, "/account");
+            } catch (e) {
+                console.error("Callback Error:", e);
+            }
         }
+        
+        await updateUI();
+    } catch (e) {
+        console.error("Critical Auth Initialization Error:", e);
+    } finally {
+        window.authInitialized = true;
+        window.dispatchEvent(new CustomEvent('auth-initialized'));
+        console.log("Auth initialization complete");
     }
-    
-    await updateUI();
-});
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAuth);
+} else {
+    initAuth();
+}
+
+// Expose auth functions to window for UI usage
+window.login = login;
+window.logout = logout;
+window.auth0Client = auth0Client; // Ensure client is accessible

@@ -1,4 +1,37 @@
 // --- CATALOG ---
+
+// Helper to get auth token for cache operations and AI requests
+async function getAuthToken() {
+    // If not initialized, wait for it
+    if (!window.authInitialized) {
+        try {
+            await Promise.race([
+                new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
+                new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
+            ]);
+        } catch (e) {
+            // silent fail
+        }
+    }
+
+    try {
+        const client = window.auth0Client;
+        if (client) {
+            const isAuthenticated = await client.isAuthenticated();
+            if (!isAuthenticated) return null;
+
+            return await client.getTokenSilently({
+                authorizationParams: {
+                    audience: "https://mostudy.org/api"
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('Failed to get auth token:', e);
+    }
+    return null;
+}
+
 const catalog = [
     {
         id: "fbla-intl-business-2025-2026",
@@ -198,6 +231,63 @@ function setupEventListeners() {
     if (searchInput) searchInput.addEventListener('input', filterResults);
     if (statusFilter) statusFilter.addEventListener('change', filterResults);
     if (categoryFilter) categoryFilter.addEventListener('change', filterResults);
+
+    document.addEventListener('click', (event) => {
+        const actionTarget = event.target.closest('[data-action]');
+        if (!actionTarget) return;
+
+        const action = actionTarget.dataset.action;
+        switch (action) {
+            case 'show-review':
+                showReviewScreen();
+                break;
+            case 'upload-json':
+                if (jsonUpload) jsonUpload.click();
+                break;
+            case 'close-test-details':
+                closeTestDetails();
+                break;
+            case 'start-quiz':
+                startQuiz();
+                break;
+            case 'select-option': {
+                const index = Number(actionTarget.dataset.optionIndex);
+                if (Number.isInteger(index) && optionsContainer?.children?.[index]) {
+                    optionsContainer.children[index].click();
+                }
+                break;
+            }
+            case 'prev-question':
+                prevQuestion();
+                break;
+            case 'toggle-flag':
+                toggleFlag();
+                break;
+            case 'next-question':
+                nextQuestion();
+                break;
+            case 'return-to-quiz':
+                returnToQuiz();
+                break;
+            case 'finish-quiz':
+                finishQuiz();
+                break;
+            case 'export-score':
+                exportScore();
+                break;
+            case 'return-home':
+                returnHome();
+                break;
+            case 'reload-page':
+                window.location.reload();
+                break;
+            case 'open-account':
+                window.location.href = '/account';
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 // --- KEYBOARD LISTENERS ---
@@ -698,8 +788,44 @@ function finishQuiz() {
 
     renderDetailedReview();
     
+    // Save quiz report to backend (fire and forget - don't block UI)
+    saveQuizReport(categoryScores);
+    
     // Trigger AI review generation
     generateAIReview();
+}
+
+/**
+ * Save the quiz report to Firestore via the backend API.
+ * Updates the local cache with the returned data.
+ */
+async function saveQuizReport(categoryScores) {
+    // Only save if cache helper is available
+    if (typeof MoStudyCache === 'undefined') {
+        console.warn('Cache helper not available, skipping quiz report save');
+        return;
+    }
+
+    try {
+        const reportData = {
+            category: currentTest?.title || 'Unknown',
+            score: Math.round((score / questions.length) * 100),
+            totalQuestions: questions.length,
+            correctAnswers: score,
+            categoryScores: Object.fromEntries(
+                Object.entries(categoryScores).map(([cat, stats]) => [
+                    cat,
+                    { correct: stats.correct, total: stats.total, percentage: Math.round((stats.correct / stats.total) * 100) }
+                ])
+            )
+        };
+
+        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'quiz', reportData);
+        console.log('Quiz report saved successfully');
+    } catch (error) {
+        console.error('Failed to save quiz report:', error);
+        // Non-blocking - user can still see results
+    }
 }
 
 // --- AI REVIEW FUNCTIONS ---
@@ -746,9 +872,15 @@ async function generateAIReview() {
         const maxRetries = 3;
         let response;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            response = await fetch("/api/ai/chat", {
+            const token = await getAuthToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+                headers["Authorization"] = `Bearer ${token}`;
+            }
+
+            response = await fetch("/api/ai/review", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: headers,
                 body: JSON.stringify(requestBody)
             });
 
@@ -758,6 +890,11 @@ async function generateAIReview() {
         }
 
         const rawText = await response.text();
+        if (response.status === 401 || response.status === 403) {
+            const data = safeJsonParse(rawText);
+            const msg = data?.message || data?.error || "Sign in to view AI feedback (403).";
+            throw new Error(msg);
+        }
         if (!response.ok) {
             const snippet = rawText ? rawText.slice(0, 180) : "";
             throw new Error(`API request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`);
@@ -1012,6 +1149,7 @@ function renderAISummaryPanel() {
     }
     
     if (aiReviewError) {
+        const requiresSignIn = /sign in/i.test(aiReviewError);
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center py-6 text-center">
                 <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-3">
@@ -1021,7 +1159,12 @@ function renderAISummaryPanel() {
                 </div>
                 <p class="text-slate-700 font-medium mb-1">AI Review Unavailable</p>
                 <p class="text-slate-500 text-sm mb-3">${escapeHtml(aiReviewError)}</p>
-                <button onclick="generateAIReview()" class="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1">
+                ${requiresSignIn ? `
+                <button data-action="open-account" class="mb-3 text-blue-600 hover:text-blue-700 font-medium text-sm">
+                    Sign in to unlock AI feedback
+                </button>
+                ` : ''}
+                <button data-action="retry-ai-review" class="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
@@ -1030,6 +1173,10 @@ function renderAISummaryPanel() {
             </div>
         `;
         container.classList.remove('hidden');
+        const retryBtn = container.querySelector('[data-action="retry-ai-review"]');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', generateAIReview);
+        }
         return;
     }
     
