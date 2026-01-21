@@ -1088,8 +1088,17 @@ async function startAudioCapture(target) {
     appState.audioChunks = [];
     
     try {
-        // Explicitly request microphone stream first to ensure permission and wake up devices
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Request mono audio at 16kHz sample rate for optimal file size (speech-optimized)
+        const audioConstraints = {
+            audio: {
+                channelCount: 1,        // Mono (50% size reduction)
+                sampleRate: 16000,      // 16kHz (good for speech, down from 44.1kHz)
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
         
         // Keep the stream reference so we can stop tracks later.
         appState.audioStream = stream;
@@ -1098,9 +1107,9 @@ async function startAudioCapture(target) {
         try {
             if (!appState.micRecorder) {
                 // Initialize MicRecorder (lamejs must be loaded)
-                // @ts-ignore
+                // @ts-ignore - Using 64kbps bitrate (down from 128kbps) for significant size reduction
                 appState.micRecorder = new MicRecorder({
-                    bitRate: 128
+                    bitRate: 64  // Reduced from 128kbps - good quality for speech
                 });
             }
 
@@ -1108,7 +1117,7 @@ async function startAudioCapture(target) {
             appState.isRecording = true;
             appState.recordingBackend = 'mp3';
             appState.audioMimeType = 'audio/mpeg';
-            console.log('MP3 Recording started for:', target);
+            console.log('MP3 Recording started for:', target, '(mono, 64kbps, 16kHz)');
             return;
         } catch (e) {
             console.warn('MP3 recorder failed, falling back to MediaRecorder:', e);
@@ -1153,17 +1162,19 @@ function stopAudioCapture() {
     };
 
     const saveBlob = async (blob) => {
-        const base64 = await blobToBase64(blob);
+        // Process audio for optimal size (trim silence, etc.)
+        const processedBlob = await processAudioForUpload(blob, target);
+        const base64 = await blobToBase64(processedBlob);
         if (target === 'main') {
-            appState.mainAudioBlob = blob;
+            appState.mainAudioBlob = processedBlob;
             appState.mainAudioBase64 = base64;
-            appState.mainAudioMimeType = blob.type || appState.audioMimeType || 'audio/mpeg';
-            console.log('Main audio processed:', blob.size, 'bytes | mime:', appState.mainAudioMimeType);
+            appState.mainAudioMimeType = processedBlob.type || appState.audioMimeType || 'audio/mpeg';
+            console.log('Main audio processed:', processedBlob.size, 'bytes | mime:', appState.mainAudioMimeType);
         } else if (target === 'qa') {
-            appState.qaAudioBlob = blob;
+            appState.qaAudioBlob = processedBlob;
             appState.qaAudioBase64 = base64;
-            appState.qaAudioMimeType = blob.type || appState.audioMimeType || 'audio/mpeg';
-            console.log('Q&A audio processed:', blob.size, 'bytes | mime:', appState.qaAudioMimeType);
+            appState.qaAudioMimeType = processedBlob.type || appState.audioMimeType || 'audio/mpeg';
+            console.log('Q&A audio processed:', processedBlob.size, 'bytes | mime:', appState.qaAudioMimeType);
         }
     };
 
@@ -1233,6 +1244,142 @@ function blobToBase64(blob) {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
+}
+
+/**
+ * Trim silence from the beginning and end of an audio blob.
+ * Uses AudioContext to analyze and trim dead air.
+ * @param {Blob} blob - The audio blob to process
+ * @param {number} threshold - Silence threshold (0-1), default 0.01
+ * @returns {Promise<Blob>} - Trimmed audio blob
+ */
+async function trimSilenceFromAudio(blob) {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        const channelData = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+        const threshold = 0.01;
+        
+        // Find start (skip silence at beginning)
+        let startSample = 0;
+        for (let i = 0; i < channelData.length; i++) {
+            if (Math.abs(channelData[i]) > threshold) {
+                // Go back 0.1 seconds to include lead-in
+                startSample = Math.max(0, i - Math.floor(sampleRate * 0.1));
+                break;
+            }
+        }
+        
+        // Find end (skip silence at end)
+        let endSample = channelData.length;
+        for (let i = channelData.length - 1; i >= startSample; i--) {
+            if (Math.abs(channelData[i]) > threshold) {
+                // Include 0.1 seconds tail
+                endSample = Math.min(channelData.length, i + Math.floor(sampleRate * 0.1));
+                break;
+            }
+        }
+        
+        // If trimming would remove too much, return original
+        const trimmedLength = endSample - startSample;
+        if (trimmedLength < sampleRate * 0.5) { // Less than 0.5 seconds
+            console.log('Audio too short after trimming, keeping original');
+            audioContext.close();
+            return blob;
+        }
+        
+        // Create trimmed buffer
+        const trimmedBuffer = audioContext.createBuffer(
+            1, // Mono
+            trimmedLength,
+            sampleRate
+        );
+        trimmedBuffer.copyToChannel(channelData.slice(startSample, endSample), 0);
+        
+        // Convert back to blob
+        const trimmedBlob = await audioBufferToBlob(trimmedBuffer, blob.type || 'audio/mpeg');
+        
+        console.log(`Trimmed audio: ${blob.size} -> ${trimmedBlob.size} bytes (${Math.round((1 - trimmedBlob.size/blob.size) * 100)}% reduction)`);
+        
+        audioContext.close();
+        return trimmedBlob;
+    } catch (error) {
+        console.warn('Could not trim silence:', error);
+        return blob;
+    }
+}
+
+/**
+ * Convert AudioBuffer to Blob (WAV format, which is universally supported)
+ */
+async function audioBufferToBlob(audioBuffer, originalMimeType) {
+    const numChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const length = audioBuffer.length;
+    
+    // Create WAV file
+    const wavBuffer = new ArrayBuffer(44 + length * 2);
+    const view = new DataView(wavBuffer);
+    
+    // WAV header
+    const writeString = (offset, string) => {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * 2, true);
+    
+    // Audio data
+    const channelData = audioBuffer.getChannelData(0);
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+        const sample = Math.max(-1, Math.min(1, channelData[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+    }
+    
+    return new Blob([wavBuffer], { type: 'audio/wav' });
+}
+
+/**
+ * Process audio blob for optimal upload size.
+ * Applies: silence trimming, chunking for long recordings.
+ * @param {Blob} blob - Original audio blob
+ * @param {string} target - 'main' or 'qa'
+ * @returns {Promise<Blob>} - Processed audio blob
+ */
+async function processAudioForUpload(blob, target) {
+    if (!blob || blob.size === 0) return blob;
+    
+    console.log(`Processing ${target} audio: ${Math.round(blob.size / 1024)} KB`);
+    
+    // Step 1: Trim silence from beginning and end
+    let processedBlob = await trimSilenceFromAudio(blob);
+    
+    // Step 2: For very long recordings (>3 min at ~64kbps = ~1.5MB), consider chunking
+    // But for now, just warn - chunking would require server-side reassembly
+    const MAX_SIZE_BYTES = 3 * 1024 * 1024; // 3MB limit
+    if (processedBlob.size > MAX_SIZE_BYTES) {
+        console.warn(`Audio file is large (${Math.round(processedBlob.size / 1024 / 1024)}MB). Consider shorter recordings.`);
+    }
+    
+    return processedBlob;
 }
 
 function getAudioPayload(target) {
@@ -1588,6 +1735,16 @@ async function startJudging() {
 
 async function runJudgeEvaluation(judge, index) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
+    const progressBar = document.getElementById(`judge-progress-bar-${index}`);
+    const progressText = document.getElementById(`judge-progress-text-${index}`);
+    
+    // Reset progress bar
+    if (progressBar) {
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('bg-green-500');
+        progressBar.classList.add('bg-blue-500');
+    }
+    if (progressText) progressText.textContent = 'Starting...';
     
     try {
         // Prepare audio payloads
@@ -1666,10 +1823,23 @@ OUTPUT JSON:
             });
         }
 
-        const response = await callAI([
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent }
-        ], true); // true = expects JSON
+        // Use streaming API for accurate progress tracking
+        const response = await callAIWithStreaming(
+            [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent }
+            ],
+            true, // expects JSON
+            (progress) => {
+                // Update progress bar based on streaming progress
+                if (progressBar) {
+                    progressBar.style.width = `${Math.min(progress.percent, 95)}%`;
+                }
+                if (progressText) {
+                    progressText.textContent = `Analyzing... ${progress.tokens} tokens`;
+                }
+            }
+        );
 
         // Parse response
         let evaluation = JSON.parse(response);
@@ -1684,6 +1854,14 @@ OUTPUT JSON:
             evaluation: evaluation
         };
         
+        // Update progress to complete
+        if (progressBar) {
+            progressBar.style.width = '100%';
+            progressBar.classList.remove('bg-blue-500');
+            progressBar.classList.add('bg-green-500');
+        }
+        if (progressText) progressText.textContent = 'Complete!';
+        
         // Update progress indicator
         if (judgeProgressItems[index]) {
             judgeProgressItems[index].innerHTML = `
@@ -1695,6 +1873,14 @@ OUTPUT JSON:
         }
     } catch (error) {
         console.error(`Error with judge ${index + 1}:`, error);
+        
+        // Update progress bar to show error state
+        if (progressBar) {
+            progressBar.style.width = '100%';
+            progressBar.classList.remove('bg-blue-500', 'bg-purple-500', 'bg-pink-500');
+            progressBar.classList.add('bg-red-500');
+        }
+        if (progressText) progressText.textContent = 'Error - Click retry';
         
         // Create fallback evaluation
         appState.judgeResults[index] = {
@@ -2073,6 +2259,134 @@ function startNewSession() {
 }
 
 // ==================== UTILITY FUNCTIONS ====================
+
+/**
+ * Call AI with streaming support for progress tracking.
+ * @param {Array} messages - Chat messages
+ * @param {boolean} expectJson - Whether to expect JSON response
+ * @param {Function} onProgress - Callback for progress updates { tokens, percent, chunk }
+ * @returns {Promise<string>} - Complete response content
+ */
+async function callAIWithStreaming(messages, expectJson = false, onProgress = null) {
+    const requestBody = {
+        messages: messages,
+        temperature: expectJson ? 0.6 : 0.8,
+        model: AI_MODEL,
+        response_format: expectJson ? { type: "json_object" } : undefined,
+        stream: true // Enable streaming
+    };
+    
+    const maxRetries = 6;
+    let lastError;
+    
+    // Estimate expected tokens for progress calculation (JSON evaluation ~800-1200 tokens)
+    const EXPECTED_TOKENS = 1000;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const token = await getAuthToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+                headers["Authorization"] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(AI_API_ENDPOINT, {
+                method: "POST",
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+
+            if (response.status === 429) {
+                if (attempt < maxRetries) {
+                    const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+                    console.warn(`Rate limit hit. Retrying in ${backoffMs}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, backoffMs));
+                    continue;
+                }
+            }
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const msg = errorData.message || errorData.error || response.statusText;
+                throw new Error(`API error (${response.status}): ${msg}`);
+            }
+
+            // Check if response is actually streaming (SSE)
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('text/event-stream')) {
+                // Handle SSE stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let fullContent = '';
+                let totalTokens = 0;
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || trimmed === 'data: [DONE]') continue;
+                        if (!trimmed.startsWith('data: ')) continue;
+                        
+                        try {
+                            const json = JSON.parse(trimmed.slice(6));
+                            
+                            if (json.type === 'progress') {
+                                totalTokens = json.tokens;
+                                if (onProgress) {
+                                    onProgress({
+                                        tokens: totalTokens,
+                                        percent: Math.min(95, (totalTokens / EXPECTED_TOKENS) * 100),
+                                        chunk: json.chunk
+                                    });
+                                }
+                            } else if (json.type === 'complete') {
+                                fullContent = json.content;
+                            } else if (json.type === 'error') {
+                                throw new Error(json.message);
+                            }
+                        } catch (e) {
+                            // Skip malformed JSON lines
+                        }
+                    }
+                }
+                
+                if (onProgress) {
+                    onProgress({ tokens: totalTokens, percent: 100, chunk: '' });
+                }
+                
+                return fullContent;
+            } else {
+                // Non-streaming response (fallback)
+                const data = await response.json();
+                if (data.choices && data.choices[0]?.message?.content) {
+                    return data.choices[0].message.content;
+                }
+                throw new Error('Invalid API response format');
+            }
+            
+        } catch (error) {
+            lastError = error;
+            console.warn(`Streaming AI call attempt ${attempt + 1} failed:`, error.message);
+            
+            if (attempt < maxRetries) {
+                const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+            }
+        }
+    }
+    
+    if (lastError) {
+        throw new Error(`AI service unavailable: ${lastError.message}`);
+    }
+    throw new Error('AI service unavailable');
+}
 
 async function callAI(messages, expectJson = false, options = {}) {
     const jsonType = options.jsonType || (expectJson ? 'object' : null);

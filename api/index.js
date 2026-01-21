@@ -165,9 +165,105 @@ const trimToLimit = (arr, limit = 25) => {
     .slice(0, limit);
 };
 
+const handleStreamingRequest = async (req, res, options) => {
+  const { model, messages, temperature, max_tokens, response_format, apiKey } = options;
+  
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const requestBody = {
+    model,
+    messages,
+    temperature,
+    max_tokens,
+    response_format,
+    stream: true
+  };
+
+  const maxRetries = 4;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const fetchResponse = await fetch('https://ai.hackclub.com/proxy/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!fetchResponse.ok) {
+        const retryable = [408, 429, 500, 502, 503, 504].includes(fetchResponse.status);
+        if (retryable && attempt < maxRetries) {
+          const backoffMs = Math.min(12000, 1200 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+          await new Promise(r => setTimeout(r, backoffMs));
+          continue;
+        }
+        throw new Error(`API error: ${fetchResponse.status}`);
+      }
+
+      const reader = fetchResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      let tokenCount = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (!trimmed.startsWith('data: ')) continue;
+
+          try {
+            const json = JSON.parse(trimmed.slice(6));
+            const delta = json.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              fullContent += delta;
+              tokenCount += delta.split(/\s+/).length;
+              // Send progress event with token count for progress estimation
+              res.write(`data: ${JSON.stringify({ type: 'progress', tokens: tokenCount, chunk: delta })}\n\n`);
+            }
+          } catch (e) {
+            // Skip malformed JSON
+          }
+        }
+      }
+
+      // Send final complete message
+      res.write(`data: ${JSON.stringify({ type: 'complete', content: fullContent })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetries) {
+        const backoffMs = Math.min(12000, 1200 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+        await new Promise(r => setTimeout(r, backoffMs));
+      }
+    }
+  }
+
+  // All retries failed
+  res.write(`data: ${JSON.stringify({ type: 'error', message: lastError?.message || 'Stream failed' })}\n\n`);
+  res.end();
+};
+
 const handleAIRequest = async (req, res) => {
   try {
-    const { messages, temperature = 0.7, model, max_tokens, response_format, enableThinking = true, audio } = req.body;
+    const { messages, temperature = 0.7, model, max_tokens, response_format, enableThinking = true, audio, stream: clientWantsStream } = req.body;
     
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Invalid request: messages array required' });
@@ -184,7 +280,19 @@ const handleAIRequest = async (req, res) => {
       return res.status(500).json({ error: 'AI service not configured: missing API key' });
     }
 
-    console.log('Calling OpenRouter with model:', selectedModel, '| Temperature:', temperature);
+    console.log('Calling OpenRouter with model:', selectedModel, '| Temperature:', temperature, '| Stream:', !!clientWantsStream);
+
+    // Handle streaming request
+    if (clientWantsStream) {
+      return handleStreamingRequest(req, res, {
+        model: selectedModel,
+        messages,
+        temperature,
+        max_tokens: max_tokens || 10000,
+        response_format,
+        apiKey
+      });
+    }
 
     const requestBody = {
       model: selectedModel,
