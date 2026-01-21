@@ -1699,6 +1699,16 @@ OUTPUT JSON:
         // Create fallback evaluation
         appState.judgeResults[index] = {
             judge: judge,
+            error: true,
+            errorDetails: {
+                message: error.message || 'Unknown error',
+                params: {
+                    index: index,
+                    status: error.status,
+                    code: error.code
+                },
+                stack: error.stack || ''
+            },
             evaluation: {
                 scores: {
                     understanding: 5,
@@ -1739,6 +1749,65 @@ OUTPUT JSON:
     }
 }
 
+// Helper functions for retry and error handling
+window.retryJudge = async function(index) {
+    const judge = appState.selectedJudges[index];
+    if (!judge) return;
+
+    // Show loading state on button
+    const retryBtn = document.getElementById(`retry-btn-${index}`);
+    if (retryBtn) {
+        const originalText = retryBtn.textContent;
+        retryBtn.textContent = "Retrying...";
+        retryBtn.disabled = true;
+        
+        // Also show loading in the progress indicator
+        const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
+        if (judgeProgressItems[index]) {
+            judgeProgressItems[index].innerHTML = `
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span class="text-sm font-medium text-blue-600">Retrying...</span>
+            `;
+        }
+    }
+
+    // Force run the judge evaluation again
+    await runJudgeEvaluation(judge, index);
+    
+    // Refresh the display with new results
+    displayJudgingResults();
+};
+
+window.copyErrorCode = function(index) {
+     const result = appState.judgeResults[index];
+     if (result && result.errorDetails) {
+         // Create a formatted string of the error details
+         const errorInfo = {
+             message: result.errorDetails.message,
+             params: result.errorDetails.params,
+             stack: result.errorDetails.stack,
+             timestamp: new Date().toISOString()
+         };
+         
+         const text = JSON.stringify(errorInfo, null, 2);
+         
+         navigator.clipboard.writeText(text).then(() => {
+             const btn = document.getElementById(`copy-error-btn-${index}`);
+             if (btn) {
+                 const originalText = btn.textContent;
+                 btn.textContent = "Copied!";
+                 setTimeout(() => {
+                     btn.textContent = originalText;
+                 }, 2000);
+             }
+         }).catch(err => {
+             console.error('Failed to copy API error:', err);
+             alert('Failed to copy code. Check console for details.');
+         });
+     }
+};
+
+
 function displayJudgingResults() {
     const loadingSection = document.getElementById('judging-loading');
     const resultsSection = document.getElementById('judging-results');
@@ -1746,21 +1815,82 @@ function displayJudgingResults() {
     if (loadingSection) loadingSection.classList.add('hidden');
     if (resultsSection) resultsSection.classList.remove('hidden');
     
-    // Calculate total score (average of all judges)
-    const validResults = appState.judgeResults.filter(r => r && r.evaluation);
-    const totalScore = Math.round(
-        validResults.reduce((sum, r) => sum + (r.evaluation.total || 0), 0) / validResults.length
-    );
+    // Calculate total score (average only from successful results for robustness)
+    const successResults = appState.judgeResults.filter(r => r && r.evaluation && !r.error);
+    const totalScore = successResults.length > 0 
+        ? Math.round(successResults.reduce((sum, r) => sum + (r.evaluation.total || 0), 0) / successResults.length)
+        : 0;
+
+    // If some judges are still in error, we might want to show that in the total
+    const hasErrors = appState.judgeResults.some(r => r.error);
+    const totalScoreEl = document.getElementById('total-score');
+    if (totalScoreEl) {
+        totalScoreEl.textContent = hasErrors ? `${totalScore}*` : totalScore;
+        // Add a tooltip or note if there are errors
+        const scoreNote = document.getElementById('score-note');
+        if (hasErrors) {
+            if (!scoreNote) {
+                const note = document.createElement('p');
+                note.id = 'score-note';
+                note.className = 'text-xs text-amber-600 mt-1';
+                note.textContent = '* Some evaluations failed. Average only includes successful judges.';
+                totalScoreEl.parentElement.appendChild(note);
+            }
+        } else if (scoreNote) {
+            scoreNote.remove();
+        }
+    }
     
-    document.getElementById('total-score').textContent = totalScore;
-    
-    // Save roleplay report to backend (fire and forget)
-    saveRoleplayReport(totalScore, validResults);
+    // Save roleplay report to backend
+    saveRoleplayReport(totalScore, appState.judgeResults);
     
     // Render judge cards
     const judgeCardsContainer = document.getElementById('judge-cards');
     judgeCardsContainer.innerHTML = appState.judgeResults.map((result, i) => {
         const judge = result.judge;
+        
+        // Error state card - Responsive design for mobile
+        if (result.error) {
+            return `
+            <div class="judge-card bg-white rounded-xl shadow-sm border border-red-200 p-6 flex flex-col h-full">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                        ${judge.name.charAt(0)}
+                    </div>
+                    <div class="min-w-0">
+                        <h4 class="font-bold text-slate-800 truncate">${judge.name}</h4>
+                        <p class="text-slate-500 text-xs truncate">${judge.title}</p>
+                    </div>
+                </div>
+                
+                <div class="bg-red-50 rounded-lg p-4 text-center mb-4">
+                    <div class="text-red-600 text-xl font-bold">Error</div>
+                    <div class="text-slate-500 text-sm">Processing Failed</div>
+                </div>
+                
+                <div class="text-sm text-red-600 mb-4 p-3 bg-red-50 rounded border border-red-100 flex-grow overflow-auto max-h-32">
+                    <p class="font-medium mb-1">Error Message:</p>
+                    <p class="break-words">${escapeHtml(result.errorDetails?.message || result.evaluation.overallFeedback)}</p>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-2 mt-auto">
+                    <button id="retry-btn-${i}" onclick="window.retryJudge(${i})" class="flex-1 bg-blue-600 text-white min-h-[44px] py-2 px-3 rounded-lg text-sm font-medium hover:bg-blue-700 active:bg-blue-800 transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.058M20 20v-5h-.058M4.05 9a9 9 0 1 1 15.9 0" />
+                        </svg>
+                        Retry
+                    </button>
+                    <button id="copy-error-btn-${i}" onclick="window.copyErrorCode(${i})" class="flex-1 bg-slate-100 text-slate-700 min-h-[44px] py-2 px-3 rounded-lg text-sm font-medium hover:bg-slate-200 active:bg-slate-300 transition flex items-center justify-center gap-2 border border-slate-300">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                        Copy Error
+                    </button>
+                </div>
+            </div>
+            `;
+        }
+
         const score = result.evaluation.total || 0;
         const scoreColor = score >= 70 ? 'text-green-600' : (score >= 50 ? 'text-amber-600' : 'text-red-600');
         const scoreBg = score >= 70 ? 'bg-green-50' : (score >= 50 ? 'bg-amber-50' : 'bg-red-50');
