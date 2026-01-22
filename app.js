@@ -146,6 +146,16 @@ let aiChunksTotal = 0;
 let aiChunksDone = 0;
 let aiFeedbackByQuestionId = {};
 
+// --- FLASHCARD STATE ---
+let flashcardTest = null;
+let flashcardCustomTest = null;
+let flashcardCards = [];
+let flashcardIndex = 0;
+let flashcardKnown = new Set();
+let flashcardAgain = new Set();
+let flashcardAutoAdvanceTimer = null;
+let flashcardIsFlipped = false;
+
 // --- DOM ELEMENTS ---
 const startScreen = document.getElementById('start-screen');
 const quizInterface = document.getElementById('quiz-interface');
@@ -173,6 +183,45 @@ const jsonUpload = document.getElementById('json-upload');
 const catalogGrid = document.getElementById('catalog-grid');
 const testDetailsContainer = document.getElementById('test-details-container');
 
+// Tool panels
+const toolHub = document.getElementById('tool-hub');
+const examPanel = document.getElementById('exam-panel');
+const flashcardPanel = document.getElementById('flashcard-panel');
+const flashcardConfig = document.getElementById('flashcard-config');
+const flashcardEditBtn = document.getElementById('flashcard-edit-btn');
+
+// Flashcard elements
+const flashcardUpload = document.getElementById('flashcard-upload');
+const flashcardSourceSelect = document.getElementById('flashcard-source');
+const flashcardCountSelect = document.getElementById('flashcard-count');
+const flashcardOrderSelect = document.getElementById('flashcard-order');
+const flashcardFrontStyleSelect = document.getElementById('flashcard-front-style');
+const flashcardAutoAdvanceSelect = document.getElementById('flashcard-auto-advance');
+const flashcardShowCategoryToggle = document.getElementById('flashcard-show-category');
+const flashcardShowExplanationToggle = document.getElementById('flashcard-show-explanation');
+const flashcardLoopToggle = document.getElementById('flashcard-loop');
+const flashcardStartBtn = document.getElementById('flashcard-start-btn');
+const flashcardShuffleBtn = document.getElementById('flashcard-shuffle-btn');
+const flashcardResetBtn = document.getElementById('flashcard-reset-btn');
+const flashcardSession = document.getElementById('flashcard-session');
+const flashcardCard = document.getElementById('flashcard-card');
+const flashcardFront = document.getElementById('flashcard-front');
+const flashcardBack = document.getElementById('flashcard-back');
+const flashcardCounter = document.getElementById('flashcard-counter');
+const flashcardStatus = document.getElementById('flashcard-status');
+const flashcardProgressBar = document.getElementById('flashcard-progress-bar');
+const flashcardKnownCount = document.getElementById('flashcard-known-count');
+const flashcardAgainCount = document.getElementById('flashcard-again-count');
+const flashcardPrevBtn = document.getElementById('flashcard-prev');
+const flashcardNextBtn = document.getElementById('flashcard-next');
+const flashcardFlipBtn = document.getElementById('flashcard-flip');
+const flashcardKnownBtn = document.getElementById('flashcard-known');
+const flashcardAgainBtn = document.getElementById('flashcard-again');
+const flashcardError = document.getElementById('flashcard-error');
+const flashcardEmpty = document.getElementById('flashcard-empty');
+const flashcardComplete = document.getElementById('flashcard-complete');
+const flashcardSourceStatus = document.getElementById('flashcard-source-status');
+
 // Details Elements
 const selectedTestIcon = document.getElementById('selected-test-icon');
 const selectedTestTitle = document.getElementById('selected-test-title');
@@ -193,6 +242,7 @@ function initializeApp() {
     
     renderCatalog();
     setupEventListeners();
+    setupFlashcardTool();
 }
 
 // Wait for DOM to be ready
@@ -238,6 +288,15 @@ function setupEventListeners() {
 
         const action = actionTarget.dataset.action;
         switch (action) {
+            case 'open-exams':
+                showExamPanel();
+                break;
+            case 'open-flashcards':
+                showFlashcardPanel();
+                break;
+            case 'back-to-tools':
+                showToolHub();
+                break;
             case 'show-review':
                 showReviewScreen();
                 break;
@@ -450,6 +509,8 @@ function setCurrentTest(test, { sourceLabel, icon, color, description }) {
     }
 
     showStartError("");
+
+    updateFlashcardSelectedTestOption(test);
 }
 
 function formatDuration(seconds) {
@@ -1427,6 +1488,432 @@ function filterResults() {
     });
 }
 
+// ===== STUDY TOOL PANELS =====
+function showToolHub() {
+    toolHub?.classList.remove('hidden');
+    examPanel?.classList.add('hidden');
+    flashcardPanel?.classList.add('hidden');
+}
+
+function showExamPanel() {
+    toolHub?.classList.add('hidden');
+    examPanel?.classList.remove('hidden');
+    flashcardPanel?.classList.add('hidden');
+}
+
+function showFlashcardPanel() {
+    toolHub?.classList.add('hidden');
+    examPanel?.classList.add('hidden');
+    flashcardPanel?.classList.remove('hidden');
+}
+
+function toggleFlashcardConfig() {
+    if (!flashcardConfig) return;
+    const isCollapsed = flashcardConfig.classList.toggle('is-collapsed');
+    if (flashcardEditBtn) {
+        flashcardEditBtn.textContent = isCollapsed ? 'Show Settings' : 'Hide Settings';
+    }
+}
+
+// ===== FLASHCARD TOOL =====
+function setupFlashcardTool() {
+    if (!flashcardSourceSelect || !flashcardPanel) return;
+
+    populateFlashcardSources();
+    updateFlashcardSelectedTestOption(currentTest);
+
+    flashcardSourceSelect.addEventListener('change', () => {
+        if (flashcardSourceSelect.value === 'upload') {
+            flashcardUpload?.click();
+        } else {
+            setFlashcardStatus('Ready');
+        }
+    });
+
+    flashcardUpload?.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const raw = JSON.parse(text);
+            const test = normalizeTestData(raw, file.name.replace(/\.json$/i, ""));
+            validateQuestions(test.questions);
+            flashcardCustomTest = test;
+            ensureFlashcardCustomOption(test.title);
+            flashcardSourceSelect.value = 'custom';
+            setFlashcardStatus('Custom set loaded');
+            showFlashcardError('');
+        } catch (err) {
+            console.error(err);
+            showFlashcardError('Upload failed. Please check your JSON format.');
+        } finally {
+            flashcardUpload.value = "";
+        }
+    });
+
+    flashcardStartBtn?.addEventListener('click', startFlashcardSession);
+    flashcardShuffleBtn?.addEventListener('click', () => {
+        if (flashcardCards.length === 0) {
+            startFlashcardSession();
+            return;
+        }
+        shuffleFlashcards();
+        renderFlashcard();
+    });
+    flashcardResetBtn?.addEventListener('click', resetFlashcardSession);
+
+    flashcardPrevBtn?.addEventListener('click', prevFlashcard);
+    flashcardNextBtn?.addEventListener('click', nextFlashcard);
+    flashcardFlipBtn?.addEventListener('click', flipFlashcard);
+    flashcardCard?.addEventListener('click', flipFlashcard);
+    flashcardKnownBtn?.addEventListener('click', () => markFlashcard(true));
+    flashcardAgainBtn?.addEventListener('click', () => markFlashcard(false));
+
+    [flashcardFrontStyleSelect, flashcardShowCategoryToggle, flashcardShowExplanationToggle].forEach((el) => {
+        el?.addEventListener('change', () => {
+            if (!flashcardSession?.classList.contains('hidden')) {
+                renderFlashcard();
+            }
+        });
+    });
+
+    flashcardEditBtn?.addEventListener('click', toggleFlashcardConfig);
+
+    document.addEventListener('keydown', (event) => {
+        if (!flashcardSession || flashcardSession.classList.contains('hidden')) return;
+        const key = event.key.toLowerCase();
+        if (key === ' ' || key === 'enter') {
+            event.preventDefault();
+            flipFlashcard();
+        }
+        if (key === 'arrowright') {
+            nextFlashcard();
+        }
+        if (key === 'arrowleft') {
+            prevFlashcard();
+        }
+        if (key === 'k') {
+            markFlashcard(true);
+        }
+        if (key === 'a') {
+            markFlashcard(false);
+        }
+    });
+
+    resetFlashcardSession();
+}
+
+function populateFlashcardSources() {
+    if (!flashcardSourceSelect) return;
+    flashcardSourceSelect.innerHTML = '';
+
+    const selectedOption = document.createElement('option');
+    selectedOption.value = 'selected';
+    selectedOption.textContent = 'Selected test (choose an exam)';
+    selectedOption.disabled = true;
+    flashcardSourceSelect.appendChild(selectedOption);
+
+    catalog.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.title;
+        flashcardSourceSelect.appendChild(option);
+    });
+
+    const uploadOption = document.createElement('option');
+    uploadOption.value = 'upload';
+    uploadOption.textContent = 'Upload JSON...';
+    flashcardSourceSelect.appendChild(uploadOption);
+
+    if (catalog.length > 0) {
+        flashcardSourceSelect.value = catalog[0].id;
+    }
+}
+
+function ensureFlashcardCustomOption(title) {
+    if (!flashcardSourceSelect) return;
+    let customOption = flashcardSourceSelect.querySelector('option[value="custom"]');
+    if (!customOption) {
+        customOption = document.createElement('option');
+        customOption.value = 'custom';
+        flashcardSourceSelect.insertBefore(customOption, flashcardSourceSelect.querySelector('option[value="upload"]'));
+    }
+    customOption.textContent = `Custom: ${title || 'Uploaded Set'}`;
+}
+
+function updateFlashcardSelectedTestOption(test) {
+    if (!flashcardSourceSelect) return;
+    const selectedOption = flashcardSourceSelect.querySelector('option[value="selected"]');
+    if (!selectedOption) return;
+
+    if (test) {
+        selectedOption.textContent = `Selected: ${test.title}`;
+        selectedOption.disabled = false;
+        if (flashcardSourceSelect.value === 'selected') {
+            setFlashcardStatus('Ready');
+        }
+    } else {
+        selectedOption.textContent = 'Selected test (choose an exam)';
+        selectedOption.disabled = true;
+    }
+}
+
+async function resolveFlashcardSource() {
+    const source = flashcardSourceSelect?.value;
+    if (source === 'selected') return currentTest;
+    if (source === 'custom') return flashcardCustomTest;
+    if (!source) return null;
+
+    const catalogItem = catalog.find((item) => item.id === source);
+    if (!catalogItem) return null;
+    const res = await fetch(catalogItem.file);
+    if (!res.ok) throw new Error('Failed to load flashcard source.');
+    const raw = await res.json();
+    return normalizeTestData(raw, catalogItem.title);
+}
+
+async function startFlashcardSession() {
+    showFlashcardError('');
+    flashcardComplete?.classList.add('hidden');
+
+    try {
+        showFlashcardPanel();
+        const test = await resolveFlashcardSource();
+        if (!test || !Array.isArray(test.questions) || test.questions.length === 0) {
+            showFlashcardError('Please choose a test with available questions.');
+            return;
+        }
+
+        validateQuestions(test.questions);
+        flashcardTest = test;
+        flashcardCards = buildFlashcardDeck(test.questions);
+        flashcardIndex = 0;
+        flashcardKnown = new Set();
+        flashcardAgain = new Set();
+        flashcardIsFlipped = false;
+        clearFlashcardAutoAdvance();
+
+        if (flashcardCards.length === 0) {
+            showFlashcardError('No cards available with current settings.');
+            return;
+        }
+
+        flashcardSession?.classList.remove('hidden');
+        flashcardEmpty?.classList.add('hidden');
+        flashcardConfig?.classList.add('is-collapsed');
+        if (flashcardEditBtn) flashcardEditBtn.textContent = 'Show Settings';
+        renderFlashcard();
+        setFlashcardStatus('In session');
+    } catch (error) {
+        console.error(error);
+        showFlashcardError('Unable to start flashcards. Please try again.');
+    }
+}
+
+function buildFlashcardDeck(questionPool) {
+    const countValue = flashcardCountSelect?.value || '50';
+    const orderValue = flashcardOrderSelect?.value || 'shuffle';
+    let pool = [...questionPool];
+
+    if (orderValue === 'shuffle') {
+        pool = pool.sort(() => Math.random() - 0.5);
+    } else if (orderValue === 'category') {
+        pool = pool.sort((a, b) => (a.category || '').localeCompare(b.category || ''));
+    }
+
+    let limit = pool.length;
+    if (countValue !== 'all') {
+        limit = Math.min(parseInt(countValue, 10) || pool.length, pool.length);
+    }
+
+    return pool.slice(0, limit);
+}
+
+function renderFlashcard() {
+    if (!flashcardCards.length || !flashcardFront || !flashcardBack) return;
+
+    const card = flashcardCards[flashcardIndex];
+    if (!card) return;
+
+    flashcardComplete?.classList.add('hidden');
+
+    flashcardIsFlipped = false;
+    flashcardCard?.classList.remove('is-flipped');
+    flashcardCard?.setAttribute('aria-pressed', 'false');
+    clearFlashcardAutoAdvance();
+
+    const showCategory = !!flashcardShowCategoryToggle?.checked;
+    const showExplanation = !!flashcardShowExplanationToggle?.checked;
+    const frontStyle = flashcardFrontStyleSelect?.value || 'question-only';
+
+    const escapeHtml = (value) => {
+        const str = String(value ?? '');
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const categoryBadge = showCategory && card.category
+        ? `<span class="flashcard-badge">${escapeHtml(card.category)}</span>`
+        : '';
+
+    const optionsMarkup = frontStyle === 'question-options'
+        ? `<div class="flashcard-options">${card.options.map((opt, idx) => `<span>${idx + 1}. ${escapeHtml(opt)}</span>`).join('')}</div>`
+        : '';
+
+    flashcardFront.innerHTML = `
+        ${categoryBadge}
+        <div class="flashcard-question">${escapeHtml(card.text)}</div>
+        ${optionsMarkup}
+    `;
+
+    const correctAnswer = card.options?.[card.correct] || '';
+    flashcardBack.innerHTML = `
+        ${categoryBadge}
+        <div class="flashcard-answer">Correct Answer: ${escapeHtml(correctAnswer)}</div>
+        ${showExplanation && card.explanation ? `<div class="flashcard-explanation">${escapeHtml(card.explanation)}</div>` : ''}
+    `;
+
+    updateFlashcardProgress();
+}
+
+function updateFlashcardProgress() {
+    if (!flashcardCounter || !flashcardProgressBar) return;
+    const total = flashcardCards.length;
+    const current = total ? flashcardIndex + 1 : 0;
+    flashcardCounter.textContent = `Card ${current} of ${total}`;
+    flashcardProgressBar.style.width = total ? `${(current / total) * 100}%` : '0%';
+    flashcardKnownCount.textContent = `Known: ${flashcardKnown.size}`;
+    flashcardAgainCount.textContent = `Review: ${flashcardAgain.size}`;
+}
+
+function flipFlashcard() {
+    if (!flashcardCard) return;
+    flashcardIsFlipped = !flashcardIsFlipped;
+    flashcardCard.classList.toggle('is-flipped', flashcardIsFlipped);
+    flashcardCard.setAttribute('aria-pressed', String(flashcardIsFlipped));
+
+    if (flashcardIsFlipped) {
+        scheduleFlashcardAutoAdvance();
+    } else {
+        clearFlashcardAutoAdvance();
+    }
+}
+
+function scheduleFlashcardAutoAdvance() {
+    clearFlashcardAutoAdvance();
+    const seconds = parseInt(flashcardAutoAdvanceSelect?.value || '0', 10);
+    if (!seconds) return;
+    flashcardAutoAdvanceTimer = setTimeout(() => {
+        nextFlashcard();
+    }, seconds * 1000);
+}
+
+function clearFlashcardAutoAdvance() {
+    if (flashcardAutoAdvanceTimer) {
+        clearTimeout(flashcardAutoAdvanceTimer);
+        flashcardAutoAdvanceTimer = null;
+    }
+}
+
+function nextFlashcard() {
+    if (!flashcardCards.length) return;
+    clearFlashcardAutoAdvance();
+    flashcardIsFlipped = false;
+    flashcardCard?.classList.remove('is-flipped');
+
+    if (flashcardIndex < flashcardCards.length - 1) {
+        flashcardIndex++;
+        renderFlashcard();
+    } else if (flashcardLoopToggle?.checked) {
+        flashcardIndex = 0;
+        renderFlashcard();
+    } else {
+        flashcardComplete?.classList.remove('hidden');
+        setFlashcardStatus('Session complete');
+    }
+}
+
+function prevFlashcard() {
+    if (!flashcardCards.length) return;
+    clearFlashcardAutoAdvance();
+    flashcardIsFlipped = false;
+    flashcardCard?.classList.remove('is-flipped');
+
+    if (flashcardIndex > 0) {
+        flashcardIndex--;
+    } else if (flashcardLoopToggle?.checked) {
+        flashcardIndex = flashcardCards.length - 1;
+    }
+    renderFlashcard();
+}
+
+function markFlashcard(isKnown) {
+    const idx = flashcardIndex;
+    if (isKnown) {
+        flashcardKnown.add(idx);
+        flashcardAgain.delete(idx);
+    } else {
+        flashcardAgain.add(idx);
+        flashcardKnown.delete(idx);
+    }
+    updateFlashcardProgress();
+    nextFlashcard();
+}
+
+function resetFlashcardSession() {
+    flashcardCards = [];
+    flashcardIndex = 0;
+    flashcardKnown = new Set();
+    flashcardAgain = new Set();
+    flashcardIsFlipped = false;
+    clearFlashcardAutoAdvance();
+    flashcardSession?.classList.add('hidden');
+    flashcardEmpty?.classList.remove('hidden');
+    flashcardComplete?.classList.add('hidden');
+    flashcardConfig?.classList.remove('is-collapsed');
+    if (flashcardEditBtn) flashcardEditBtn.textContent = 'Edit Settings';
+    showFlashcardError('');
+    setFlashcardStatus('Ready');
+}
+
+function shuffleFlashcards() {
+    flashcardCards = flashcardCards.sort(() => Math.random() - 0.5);
+    flashcardIndex = 0;
+    flashcardKnown = new Set();
+    flashcardAgain = new Set();
+    flashcardComplete?.classList.add('hidden');
+    setFlashcardStatus('Shuffled');
+}
+
+function showFlashcardError(message) {
+    if (!flashcardError) return;
+    if (!message) {
+        flashcardError.classList.add('hidden');
+        flashcardError.textContent = '';
+        return;
+    }
+    flashcardError.textContent = message;
+    flashcardError.classList.remove('hidden');
+}
+
+function setFlashcardStatus(text) {
+    if (flashcardStatus) {
+        flashcardStatus.textContent = text || 'Ready';
+    }
+    if (flashcardSourceStatus) {
+        if (flashcardTest?.title) {
+            flashcardSourceStatus.textContent = `Using: ${flashcardTest.title}`;
+        } else {
+            flashcardSourceStatus.textContent = 'Choose a catalog test, selected exam, or upload JSON.';
+        }
+    }
+}
+
 // Ensure inline onclick handlers work even if script loading changes.
 window.startQuiz = startQuiz;
 window.prevQuestion = prevQuestion;
@@ -1453,6 +1940,8 @@ function returnHome() {
     aiChunksDone = 0;
     aiFeedbackByQuestionId = {};
     clearInterval(timerInterval);
+    flashcardTest = null;
+    resetFlashcardSession();
     
     // Show start screen
     resultsScreen.classList.add('hidden');
@@ -1461,6 +1950,7 @@ function returnHome() {
     reviewNavBtn.classList.add('hidden');
     testDetailsContainer.classList.add('hidden');
     catalogGrid.classList.remove('hidden');
+    showToolHub();
 }
 window.returnHome = returnHome;
 

@@ -69,29 +69,67 @@
     <main class="flex-grow relative overflow-y-auto p-4 flex justify-center scroll-smooth" style="background-color: var(--color-bg);">
         
         <!-- Welcome Screen -->
-        <div id="start-screen" class="max-w-5xl w-full mx-auto my-auto fade-in-page">
-            <div class="text-center mb-10">
-                <h2 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Select an Exam</h2>
-                <p class="text-slate-500">Choose a practice test from the catalog or upload your own.</p>
+        <div id="start-screen" class="max-w-6xl w-full mx-auto my-auto fade-in-page">
+            <div id="tool-hub" class="fade-in-page">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-2">Study Tools</h2>
+                    <p class="text-slate-500">Choose a tool to enter a dedicated full-screen experience.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10">
+                    <button data-action="open-exams" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition flex items-center gap-4 group">
+                        <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">📝</div>
+                        <div>
+                            <h3 class="font-bold text-slate-800">Tests & Exams</h3>
+                            <p class="text-slate-500 text-sm">Timed practice with review, analytics, and AI insights.</p>
+                        </div>
+                    </button>
+                    <button data-action="open-flashcards" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-purple-400 hover:shadow-md transition flex items-center gap-4 group">
+                        <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">🧠</div>
+                        <div>
+                            <h3 class="font-bold text-slate-800">Flashcard Studio</h3>
+                            <p class="text-slate-500 text-sm">Premium flip experience with smart tracking and shuffle.</p>
+                        </div>
+                    </button>
+                    <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-5 rounded-2xl shadow-lg border border-slate-700 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-white/10 text-white flex items-center justify-center text-2xl">⚡</div>
+                        <div>
+                            <h3 class="font-bold text-white">More Tools Coming</h3>
+                            <p class="text-white/70 text-sm">Study plans, quizzes, and explainers are next.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <input type="file" id="json-upload" accept="application/json" class="hidden" />
+            <input type="file" id="flashcard-upload" accept="application/json" class="hidden" />
 
-            <!-- Upload Card -->
-            <div onclick="document.getElementById('json-upload').click()" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/30 transition cursor-pointer mb-8 group flex flex-col sm:flex-row items-center sm:justify-between gap-4 text-center sm:text-left">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform">
-                        📂
-                    </div>
-                    <div>
-                        <h3 class="font-bold text-slate-700 text-lg group-hover:text-blue-700 transition">Upload Custom JSON Test</h3>
-                        <p class="text-slate-500 text-sm">Drag and drop or click to browse local files</p>
+            <section id="exam-panel" class="study-panel hidden">
+                <div class="study-panel__header">
+                    <div class="flex items-center gap-3">
+                        <button data-action="back-to-tools" class="study-panel__back">Back</button>
+                        <div>
+                            <h3 class="text-2xl font-bold text-slate-800">Tests & Exams</h3>
+                            <p class="text-slate-500 text-sm">Select a test or upload your own.</p>
+                        </div>
                     </div>
                 </div>
-                <button class="bg-white text-blue-600 font-semibold py-2 px-5 rounded-lg border border-slate-200 shadow-sm group-hover:shadow hover:bg-blue-50 transition text-sm">
-                    Select File
-                </button>
-            </div>
+
+                <!-- Upload Card -->
+                <div onclick="document.getElementById('json-upload').click()" class="bg-white p-6 rounded-2xl shadow-sm border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/30 transition cursor-pointer mb-8 group flex flex-col sm:flex-row items-center sm:justify-between gap-4 text-center sm:text-left">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform">
+                            📂
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg group-hover:text-blue-700 transition">Upload Custom JSON Test</h3>
+                            <p class="text-slate-500 text-sm">Drag and drop or click to browse local files</p>
+                        </div>
+                    </div>
+                    <button class="bg-white text-blue-600 font-semibold py-2 px-5 rounded-lg border border-slate-200 shadow-sm group-hover:shadow hover:bg-blue-50 transition text-sm">
+                        Select File
+                    </button>
+                </div>
             
             <div id="test-details-container" class="hidden bg-white p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-200 relative overflow-hidden mb-8 fade-in-up">
                  <button onclick="closeTestDetails()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition">
@@ -144,9 +182,144 @@
                  </div>
             </div>
 
-            <div id="catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
-                <!-- Catalog injected here -->
-            </div>
+                <div id="catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
+                    <!-- Catalog injected here -->
+                </div>
+            </section>
+
+            <section id="flashcard-panel" class="study-panel hidden">
+                <div class="study-panel__header">
+                    <div class="flex items-center gap-3">
+                        <button data-action="back-to-tools" class="study-panel__back">Back</button>
+                        <div>
+                            <h3 class="text-2xl font-bold text-slate-800">Flashcard Studio</h3>
+                            <p class="text-slate-500 text-sm">Full-screen, premium flashcards built from any test.</p>
+                        </div>
+                    </div>
+                    <button id="flashcard-edit-btn" class="study-panel__edit">Edit Settings</button>
+                </div>
+
+                <div class="flashcard-studio">
+                    <div id="flashcard-config" class="flashcard-config">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+                            <div>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-2xl">✨</span>
+                                    <h4 class="text-xl font-bold text-slate-800">Build Your Session</h4>
+                                </div>
+                                <p class="text-slate-500">Customize source, order, and display before starting.</p>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button id="flashcard-start-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-lg shadow-purple-500/30 transition transform hover:-translate-y-0.5">Start Session</button>
+                                <button id="flashcard-shuffle-btn" class="bg-white text-purple-700 font-semibold py-2.5 px-5 rounded-lg border border-purple-200 shadow-sm hover:bg-purple-50 transition">Shuffle</button>
+                                <button id="flashcard-reset-btn" class="bg-white text-slate-600 font-semibold py-2.5 px-5 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50 transition">Reset</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1">Source</label>
+                                <select id="flashcard-source" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block p-2.5"></select>
+                                <p id="flashcard-source-status" class="text-xs text-slate-400 mt-1">Choose a catalog test, selected exam, or upload JSON.</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1">Cards per Session</label>
+                                <select id="flashcard-count" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block p-2.5">
+                                    <option value="10">10 Cards</option>
+                                    <option value="25">25 Cards</option>
+                                    <option value="50" selected>50 Cards</option>
+                                    <option value="100">100 Cards</option>
+                                    <option value="all">All Available</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1">Order</label>
+                                <select id="flashcard-order" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block p-2.5">
+                                    <option value="shuffle" selected>Shuffle (Recommended)</option>
+                                    <option value="sequential">Original Order</option>
+                                    <option value="category">Group by Category</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1">Front Style</label>
+                                <select id="flashcard-front-style" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block p-2.5">
+                                    <option value="question-only" selected>Question Only</option>
+                                    <option value="question-options">Question + Options</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 mb-1">Auto Advance</label>
+                                <select id="flashcard-auto-advance" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block p-2.5">
+                                    <option value="0" selected>Off</option>
+                                    <option value="5">Every 5s (after flip)</option>
+                                    <option value="8">Every 8s (after flip)</option>
+                                    <option value="12">Every 12s (after flip)</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-xs font-semibold text-slate-500">Display</label>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                    <input id="flashcard-show-category" type="checkbox" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500" checked />
+                                    Show category badge
+                                </label>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                    <input id="flashcard-show-explanation" type="checkbox" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500" checked />
+                                    Show explanation on back
+                                </label>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                                    <input id="flashcard-loop" type="checkbox" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500" checked />
+                                    Loop when finished
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="flashcard-error" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-6"></div>
+
+                    <div id="flashcard-session" class="hidden">
+                        <div class="flashcard-session-bar">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-3 text-sm font-semibold text-slate-500 mb-2">
+                                    <span id="flashcard-counter">Card 1 of 50</span>
+                                    <span class="hidden sm:inline">•</span>
+                                    <span id="flashcard-status">Ready</span>
+                                </div>
+                                <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                    <div id="flashcard-progress-bar" class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 text-sm">
+                                <span id="flashcard-known-count" class="px-3 py-1 rounded-full bg-green-100 text-green-700 font-semibold">Known: 0</span>
+                                <span id="flashcard-again-count" class="px-3 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">Review: 0</span>
+                            </div>
+                        </div>
+
+                        <div class="flashcard-stage">
+                            <button id="flashcard-card" class="flashcard-card" type="button" aria-live="polite" aria-label="Flashcard. Press to flip.">
+                                <div class="flashcard-face flashcard-front" id="flashcard-front"></div>
+                                <div class="flashcard-face flashcard-back" id="flashcard-back"></div>
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-3 mt-6">
+                            <div class="flex gap-2">
+                                <button id="flashcard-prev" class="bg-white text-slate-700 font-semibold py-2.5 px-4 rounded-lg border border-slate-200 hover:bg-slate-50 transition">Prev</button>
+                                <button id="flashcard-flip" class="bg-slate-900 text-white font-semibold py-2.5 px-5 rounded-lg shadow-md hover:bg-slate-800 transition">Flip</button>
+                                <button id="flashcard-next" class="bg-white text-slate-700 font-semibold py-2.5 px-4 rounded-lg border border-slate-200 hover:bg-slate-50 transition">Next</button>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="flashcard-again" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2.5 px-4 rounded-lg shadow-md">Again</button>
+                                <button id="flashcard-known" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 px-4 rounded-lg shadow-md">Know It</button>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-slate-400 mt-4">Tips: Tap the card or press Space to flip. Use ←/→ to navigate, K for Know, A for Again.</p>
+                    </div>
+
+                    <div id="flashcard-empty" class="hidden bg-slate-50 border border-slate-200 text-slate-600 px-4 py-3 rounded-lg text-sm">Load a test to start your flashcard session.</div>
+                    <div id="flashcard-complete" class="hidden bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mt-4">Session complete! Shuffle or restart to review again.</div>
+                </div>
+            </section>
         </div>
 
         <!-- Quiz Interface -->
