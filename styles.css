@@ -1493,3 +1493,97 @@ button, a, input[type="button"], input[type="submit"] {
   }
 }
 
+/* ===== ERROR MODAL STYLES ===== */
+.error-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background-color: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.error-modal {
+  position: relative;
+  z-index: 1001;
+  background-color: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  max-width: 28rem;
+  width: 100%;
+  text-align: center;
+  border: 1px solid #e2e8f0;
+  animation: floatIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.error-modal-icon {
+  width: 4rem;
+  height: 4rem;
+  background-color: #fecaca;
+  color: #dc2626;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 1.5rem;
+}
+
+.error-modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+  font-family: 'Poppins', system-ui, sans-serif;
+}
+
+.error-modal-message {
+  color: #64748b;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.error-modal-button {
+  width: 100%;
+  background-color: #3b82f6;
+  color: #ffffff;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+}
+
+.error-modal-button:hover {
+  background-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transform: translateY(-2px);
+}
+
+.error-modal-button:active {
+  transform: translateY(0);
+}
+
+/* Dark mode error modal */
+[data-theme="dark"] .error-modal {
+  background-color: var(--color-light-bg);
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .error-modal-title {
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .error-modal-message {
+  color: var(--color-muted);
+}
+

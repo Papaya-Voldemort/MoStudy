@@ -19,6 +19,100 @@ const PRESENTATION_WARNING = 1 * 60; // 1 minute warning
 const QA_READ_DELAY = 5; // 5 seconds
 const QA_TIME = 1 * 60; // 1 minute
 
+// ==================== SCENARIO BIAS PREVENTION ====================
+
+// Diverse countries for international business scenarios
+const SCENARIO_COUNTRIES = [
+    "Germany", "Japan", "Brazil", "India", "South Korea",
+    "Mexico", "Canada", "Australia", "Singapore", "United Kingdom",
+    "France", "China", "Indonesia", "Nigeria", "UAE",
+    "Netherlands", "Switzerland", "Sweden", "Thailand", "Vietnam",
+    "Spain", "Italy", "Poland", "Turkey", "Malaysia",
+    "New Zealand", "Ireland", "Hong Kong", "Taiwan", "Denmark",
+    "Norway", "Belgium", "Portugal", "Czech Republic", "Chile"
+];
+
+// Diverse company types and products for varied scenarios
+const SCENARIO_COMPANY_TYPES = [
+    // Technology & Software
+    "Software Development Company",
+    "E-commerce Platform",
+    "SaaS Provider",
+    "Cybersecurity Firm",
+    "AI/Machine Learning Startup",
+    "Cloud Computing Services",
+    "Mobile App Developer",
+    "Blockchain Technology Company",
+    "Data Analytics Platform",
+    "Video Streaming Service",
+    "Social Media Platform",
+    "Project Management Software",
+    
+    // Manufacturing & Production
+    "Electronics Manufacturer",
+    "Automotive Parts Supplier",
+    "Textile Production Company",
+    "Pharmaceutical Manufacturer",
+    "Food Processing Company",
+    "Renewable Energy Equipment Maker",
+    "Industrial Equipment Supplier",
+    "Chemical Manufacturing Plant",
+    "Glass & Ceramics Producer",
+    "Metal Fabrication Company",
+    "Paper & Packaging Manufacturer",
+    "Agricultural Machinery Maker",
+    
+    // Retail & Consumer Goods
+    "Fashion Retailer",
+    "Luxury Goods Producer",
+    "Consumer Electronics Brand",
+    "Organic Food Brand",
+    "Beverage Company",
+    "Cosmetics Brand",
+    "Sports Equipment Manufacturer",
+    "Home Furniture Retailer",
+    "Premium Jewelry Brand",
+    "Outdoor Recreation Gear Company",
+    "Pet Supplies Brand",
+    "Baby Products Manufacturer",
+    
+    // Services & Finance
+    "Consulting Firm",
+    "Financial Services Company",
+    "Insurance Provider",
+    "Real Estate Development Firm",
+    "Logistics & Supply Chain Company",
+    "Tourism & Hospitality Business",
+    "Professional Services Firm",
+    "Private Banking Services",
+    "Payment Processing Company",
+    "Venture Capital Firm",
+    "Executive Recruitment Agency",
+    "Market Research Company",
+    
+    // Specialized Industries
+    "Renewable Energy Company",
+    "Medical Device Manufacturer",
+    "Agricultural Technology Firm",
+    "Biotech Research Company",
+    "Telecommunications Provider",
+    "Media & Entertainment Company",
+    "Education Technology Platform",
+    "Healthcare IT Solutions",
+    "Engineering Consulting Firm",
+    "Environmental Services Company",
+    "Legal Services Firm",
+    "Accounting & Audit Firm",
+    "Sports Management Agency",
+    "Fashion Design House",
+    "Restaurant Chain",
+    "Grocery Delivery Service",
+    "Fitness Equipment Brand",
+    "Gaming Company",
+    "Virtual Reality Studio",
+    "Construction Materials Supplier"
+];
+
 // ==================== JUDGE PERSONAS ====================
 
 const JUDGE_POOL = [
@@ -239,72 +333,31 @@ let appState = {
  * Check if the user is authenticated and enforce login if not.
  * Shows a lock modal if valid session is not found.
  */
-async function checkLoginStatus() {
-    // Wait for auth initialization
-    // Check if already initialized
-    if (!window.authInitialized) {
-        // Wait up to 10 seconds for auth-initialized event
-        try {
-            await Promise.race([
-                new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
-                // Increased to 20s to be safe on slow connections
-                new Promise((_, reject) => setTimeout(() => reject('timeout'), 20000))
-            ]);
-        } catch (e) {
-            console.warn("Auth initialization timed out, checking client directly.");
-        }
-    }
-    
-    // Check authentication
-    const client = window.auth0Client;
+// ==================== AUTH HELPERS (OPTIONAL - LOGIN NOT REQUIRED) ====================
 
-    if (client) {
-        try {
-            const isAuthenticated = await client.isAuthenticated();
-            if (!isAuthenticated) {
-                // Double check if we can silently login?
-                try {
-                    await client.getTokenSilently({
-                        authorizationParams: {
-                            audience: "https://mostudy.org/api"
-                        }
-                    });
-                    // If this succeeds, we ARE authenticated, just state wasn't updated
-                    console.log("Recovered session via silent token");
-                } catch(e) {
-                    // Genuine auth failure
-                    showLoginLock();
-                }
-            } else {
-                 console.log("User verified authenticated");
-            }
-        } catch (e) {
-            console.error("Auth check failed:", e);
-            showLoginLock();
-        }
-    } else {
-        console.warn("Auth client not initialized, locking UI.");
-        showLoginLock();
-    }
+/**
+ * DEPRECATED: Auth check removed - AI roleplay is now publicly accessible.
+ * Keeping function for backwards compatibility if needed.
+ */
+async function checkLoginStatus() {
+    console.log("Note: Login is now optional for roleplay. Users can access features without authentication.");
+    // Function deprecated - no longer called
 }
 
 function showLoginLock() {
-    const modal = document.getElementById('login-lock-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden'; // Prevent scrolling
-    }
+    // Login lock disabled - roleplay is now public
+    console.log("Roleplay is publicly accessible, no login required");
 }
 
-// Check auth specifically for Roleplay page
-window.addEventListener('load', () => {
-    // Delay slightly to ensure auth0 has time to process potential redirects
-    setTimeout(checkLoginStatus, 1000);
-});
+// Auth check removed - AI roleplay is now publicly accessible
+// window.addEventListener('load', () => {
+//     Delay slightly to ensure auth0 has time to process potential redirects
+//     setTimeout(checkLoginStatus, 1000);
+// });
 
 /**
  * Get auth token for API requests.
- * Returns null if not authenticated.
+ * Returns null if not authenticated, but API still works without it.
  */
 async function getAuthToken() {
     // If not initialized, wait for it
@@ -668,6 +721,71 @@ async function loadEventExamples(event) {
     }
 }
 
+// ==================== SCENARIO GENERATION HELPERS ====================
+
+/**
+ * Get a random item from an array
+ */
+function getRandomItem(array) {
+    return array[Math.floor(Math.random() * array.length)];
+}
+
+/**
+ * Select random company type and 3 country expansion options
+ * Company starts in US and expands to one of the 3 countries (AI will choose best fit)
+ */
+function getScenarioDiversityElements() {
+    // Shuffle countries and pick 3 unique ones
+    const shuffled = [...SCENARIO_COUNTRIES].sort(() => Math.random() - 0.5);
+    const countryOptions = shuffled.slice(0, 3);
+    const companyType = getRandomItem(SCENARIO_COMPANY_TYPES);
+    
+    return {
+        baseCountry: "United States",
+        countryOptions: countryOptions,
+        companyType: companyType,
+        timestamp: new Date().toISOString()
+    };
+}
+
+/**
+ * Log scenario generation event with detailed context
+ */
+function logScenarioGeneration(stage, data = {}) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        timestamp,
+        stage,
+        event: appState.currentEvent?.title || 'Unknown',
+        ...data
+    };
+    
+    console.log(`[ROLEPLAY SCENARIO] ${stage}:`, logEntry);
+    
+    // Store in session for debugging
+    if (!window.roleplayLogs) window.roleplayLogs = [];
+    window.roleplayLogs.push(logEntry);
+}
+
+/**
+ * Log AI API call with request/response details
+ */
+function logAICall(type, details = {}) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+        timestamp,
+        type,
+        model: AI_MODEL,
+        endpoint: AI_API_ENDPOINT,
+        ...details
+    };
+    
+    console.log(`[ROLEPLAY AI] ${type}:`, logEntry);
+    
+    if (!window.roleplayAILogs) window.roleplayAILogs = [];
+    window.roleplayAILogs.push(logEntry);
+}
+
 async function generateScenario() {
     // Animate progress bar
     const progressBar = document.getElementById('generation-progress');
@@ -678,21 +796,39 @@ async function generateScenario() {
     }, 500);
     
     try {
+        logScenarioGeneration('START', { 
+            event: appState.currentEvent?.title,
+            exampleCount: appState.eventExamples.length 
+        });
+
+        // Get random company type and 3 country options for expansion
+        const diversityElements = getScenarioDiversityElements();
+        logScenarioGeneration('DIVERSITY_ELEMENTS', diversityElements);
+
         // Select 2-3 random examples to use as reference
         const shuffled = [...appState.eventExamples].sort(() => Math.random() - 0.5);
         const selectedExamples = shuffled.slice(0, Math.min(3, shuffled.length));
         
+        logScenarioGeneration('EXAMPLES_SELECTED', { 
+            count: selectedExamples.length,
+            indices: shuffled.slice(0, selectedExamples.length).map((_, i) => i)
+        });
+
         const systemPrompt = `You are an expert FBLA Role Play scenario designer.
 TARGET EVENT: ${appState.currentEvent.title}
 DIFFICULTY: Official FBLA competitive level (fair, realistic, and solvable in 20 minutes planning + 7 minutes presentation).
 
 INSTRUCTIONS:
 1. Create a realistic business scenario that matches the event and sounds like an official FBLA prompt.
-2. Include concrete details (company size, constraints, stakeholders, a few data points) but keep it solvable.
-3. STRUCTURE: You must output headers exactly as: **Background Information**, **Scenario**, **Other Useful Information**, **Requirements**.
-4. LENGTH: Aim for ~${SCENARIO_TARGET_WORDS} words (complete, not overly long).
-5. REQUIREMENTS: Provide exactly 3 bullet points in the Requirements section that the student must address.
-6. Make the scenario self-contained: include any needed numbers, dates, and constraints in the prompt.`;
+2. The company is a USA-based ${diversityElements.companyType} that is expanding internationally.
+3. Present the company with 3 country expansion options: ${diversityElements.countryOptions.join(', ')}.
+4. Instruct the competitor to select ONE of these three countries that makes the most strategic sense for this company type to expand into and justify their choice.
+5. Include concrete details (company size, constraints, stakeholders, a few data points) but keep it solvable.
+6. STRUCTURE: You must output headers exactly as: **Background Information**, **Scenario**, **Country Options for Expansion**, **Other Useful Information**, **Requirements**.
+7. In the **Country Options for Expansion** section, list the three countries and ask the student to choose one.
+8. LENGTH: Aim for ~${SCENARIO_TARGET_WORDS} words (complete, not overly long).
+9. REQUIREMENTS: Provide exactly 3 bullet points in the Requirements section that the student must address (including justifying their country choice).
+10. Make the scenario self-contained: include any needed numbers, dates, and constraints in the prompt.`;
 
         const userPrompt = `Create a NEW scenario. Do not copy the examples.
 
@@ -702,18 +838,42 @@ INSTRUCTIONS:
     Reference Examples:
 ${selectedExamples.map((ex, i) => `--- EX ${i + 1} ---\n${ex.substring(0, 150)}...`).join('\n')}
 
-Generate the scenario now.`;
+Generate the scenario now. The company is a USA-based ${diversityElements.companyType}. 
+
+Present these three countries as expansion options: ${diversityElements.countryOptions.join(', ')}
+
+Instruct the student to choose ONE country that makes the most strategic sense for this company type, and require them to justify their choice in the requirements.`;
+
+        logAICall('SCENARIO_GENERATION_START', {
+            baseCountry: diversityElements.baseCountry,
+            countryOptions: diversityElements.countryOptions,
+            companyType: diversityElements.companyType,
+            examplesCount: selectedExamples.length
+        });
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
         ]);
         
+        logAICall('SCENARIO_GENERATION_SUCCESS', {
+            responseLength: response?.length || 0,
+            baseCountry: diversityElements.baseCountry,
+            countryOptions: diversityElements.countryOptions,
+            companyType: diversityElements.companyType
+        });
+
         clearInterval(progressInterval);
         progressBar.style.width = '100%';
         
         // Removed the "trimScenario" function call which was chopping off the ends of valid scenarios
         appState.generatedScenario = response;
+        appState.generatedScenarioContext = diversityElements; // Store for reference
+
+        logScenarioGeneration('COMPLETE', {
+            scenarioLength: response?.length || 0,
+            context: diversityElements
+        });
 
         // Small delay to let user see 100%
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -721,6 +881,13 @@ Generate the scenario now.`;
     } catch (error) {
         clearInterval(progressInterval);
         console.error('Scenario generation error:', error);
+        
+        logAICall('SCENARIO_GENERATION_ERROR', {
+            error: error.message,
+            status: error.status,
+            stack: error.stack?.substring(0, 200)
+        });
+        
         throw error;
     }
 }
@@ -1620,6 +1787,11 @@ async function generateQAQuestionsBeforePresentation() {
     // This generates questions BEFORE the presentation starts
     // Questions are based on the scenario only
     try {
+        logScenarioGeneration('QA_GENERATION_BEFORE_START', {
+            timing: 'before',
+            scenarioLength: appState.generatedScenario?.length || 0
+        });
+
         const systemPrompt = `You are an FBLA competition judge preparing questions about a role play scenario.
 
 DIFFICULTY LEVEL: Official FBLA competitive level (fair, realistic, probing).
@@ -1638,6 +1810,11 @@ SCENARIO:
 ${appState.generatedScenario}
 `;
 
+        logAICall('QA_GENERATION_START', {
+            timing: 'before_presentation',
+            event: appState.currentEvent.title
+        });
+
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -1647,32 +1824,57 @@ ${appState.generatedScenario}
         let questions;
         try {
             questions = JSON.parse(response);
+            logAICall('QA_GENERATION_SUCCESS', {
+                questionsCount: questions.length,
+                responseLength: response.length
+            });
         } catch {
             // Try to extract array from response
             const match = response.match(/\[[\s\S]*\]/);
             if (match) {
                 questions = JSON.parse(match[0]);
+                logAICall('QA_GENERATION_FALLBACK_PARSE', {
+                    questionsCount: questions.length
+                });
             } else {
                 questions = [
                     "How would you approach the challenges presented in this scenario?",
                     "What key factors would influence your proposed solution?"
                 ];
+                logAICall('QA_GENERATION_FALLBACK_DEFAULT', {
+                    questionsCount: 2,
+                    reason: 'Could not parse JSON from response'
+                });
             }
         }
         
         appState.qaQuestions = questions;
         console.log('Generated Q&A questions:', appState.qaQuestions);
+        logScenarioGeneration('QA_QUESTIONS_GENERATED', {
+            timing: 'before',
+            questionsCount: questions.length,
+            questions: questions
+        });
         // Display questions immediately so they're ready when Q&A screen shows
         displayQAQuestions();
         
     } catch (error) {
         console.error('Error generating pre-presentation Q&A questions:', error);
+        logAICall('QA_GENERATION_ERROR', {
+            error: error.message,
+            timing: 'before_presentation'
+        });
         // Use fallback questions
         appState.qaQuestions = [
             "What is the main challenge you need to address?",
             "How would your solution benefit the company or organization?"
         ];
         console.log('Using fallback Q&A questions:', appState.qaQuestions);
+        logScenarioGeneration('QA_QUESTIONS_FALLBACK', {
+            timing: 'before',
+            questionsCount: 2,
+            reason: error.message
+        });
         displayQAQuestions();
     }
 }
@@ -1858,10 +2060,23 @@ async function startJudging() {
 async function runJudgeEvaluation(judge, index) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
     
+    logAICall('JUDGE_EVALUATION_START', {
+        judgeIndex: index,
+        judgeName: judge.name,
+        judgeTitle: judge.title,
+        totalJudges: appState.selectedJudges.length
+    });
+    
     try {
         // Prepare audio payloads
         const mainTranscriptText = (appState.mainTranscript || '').trim();
         const qaTranscriptText = (appState.qaTranscript || '').trim();
+        
+        console.log(`[JUDGE-${index + 1}] Evaluating with ${judge.name}:`, {
+            mainTranscriptLength: mainTranscriptText.length,
+            qaTranscriptLength: qaTranscriptText.length,
+            questionsCount: appState.qaQuestions.length
+        });
         
         const judgeVoices = {
             'Dr. Margaret Chen': 'You are analytical and theory-focused.',
@@ -1880,7 +2095,7 @@ async function runJudgeEvaluation(judge, index) {
         
         const systemPrompt = `You are ${judge.name}, ${judge.title}. 
 PERSONALITY: ${judgeVoice}
-    TASK: Judge an FBLA role play based on the MP3 audio provided (audio/mpeg).
+    TASK: Judge an FBLA role play based on the presentation and Q&A responses provided.
 
 RUBRIC (Max 100):
 - Understanding (10): Did they grasp the problem?
@@ -1888,7 +2103,7 @@ RUBRIC (Max 100):
 - Solution (20): Was the solution logical/feasible?
 - Knowledge (20): Did they use business terms correctly?
 - Organization (10): Was the flow logical?
-- Delivery (10): Confidence, voice, pacing (Judge based on audio).
+- Delivery (10): Confidence, voice, pacing.
 - Questions (10): How well did they answer user questions?
 
 OUTPUT JSON:
@@ -1905,9 +2120,11 @@ OUTPUT JSON:
 
         // Build Multi-modal Content
         const userContent = [
-            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nNOTE: Audio was chunked and transcribed to avoid upload limits.` }
+            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nPLEASE EVALUATE THE STUDENT'S PERFORMANCE USING THE RUBRIC AND RETURN JSON.` }
         ];
 
+        console.log(`[JUDGE-${index + 1}] Sending evaluation request to AI...`);
+        
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userContent }
@@ -1920,6 +2137,18 @@ OUTPUT JSON:
         if (!evaluation.total) {
             evaluation.total = Object.values(evaluation.scores).reduce((a, b) => a + b, 0);
         }
+        
+        logAICall('JUDGE_EVALUATION_SUCCESS', {
+            judgeIndex: index,
+            judgeName: judge.name,
+            score: evaluation.total,
+            scoreBreakdown: evaluation.scores
+        });
+
+        console.log(`[JUDGE-${index + 1}] Evaluation complete:`, {
+            totalScore: evaluation.total,
+            scores: evaluation.scores
+        });
         
         appState.judgeResults[index] = {
             judge: judge,
@@ -1937,6 +2166,13 @@ OUTPUT JSON:
         }
     } catch (error) {
         console.error(`Error with judge ${index + 1}:`, error);
+        
+        logAICall('JUDGE_EVALUATION_ERROR', {
+            judgeIndex: index,
+            judgeName: judge.name,
+            error: error.message,
+            status: error.status
+        });
         
         // Create fallback evaluation
         appState.judgeResults[index] = {
@@ -1971,11 +2207,11 @@ OUTPUT JSON:
                     delivery: "Error processing evaluation.",
                     questions: "Error processing evaluation."
                 },
-                overallFeedback: "The AI judge encountered an error processing your audio. It might be too long or the format was rejected.",
+                overallFeedback: "The AI judge encountered an error processing your presentation. Please try again or check your internet connection.",
                 strengthHighlight: "N/A",
                 improvementArea: "N/A",
                 personalizedFeedback: "I'm sorry, I couldn't process your presentation.",
-                actionableTips: ["Try a shorter recording", "Check internet connection"]
+                actionableTips: ["Check your internet connection", "Try submitting again"]
             },
             error: true
         };
@@ -1984,6 +2220,7 @@ OUTPUT JSON:
             judgeProgressItems[index].innerHTML = `
                 <svg class="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+
                 </svg>
                 <span class="text-sm text-amber-600">Judge ${index + 1}</span>
             `;
@@ -2320,6 +2557,9 @@ function startNewSession() {
 
 async function callAI(messages, expectJson = false, options = {}) {
     const jsonType = options.jsonType || (expectJson ? 'object' : null);
+    const callId = Math.random().toString(36).substring(7).toUpperCase();
+    const requestTimestamp = new Date().toISOString();
+    
     const requestBody = {
         messages: messages,
         temperature: expectJson ? 0.6 : 0.8, 
@@ -2328,29 +2568,64 @@ async function callAI(messages, expectJson = false, options = {}) {
         response_format: (expectJson && jsonType === 'object') ? { type: "json_object" } : undefined
     };
     
+    // Log request details
+    console.log(`[AI-CALL-${callId}] REQUEST START at ${requestTimestamp}`, {
+        endpoint: AI_API_ENDPOINT,
+        model: AI_MODEL,
+        expectJson,
+        jsonType,
+        messagesCount: messages.length,
+        firstMessageRole: messages[0]?.role,
+        temperature: requestBody.temperature,
+        hasToken: !!(await getAuthToken())
+    });
+
+    // Log message content preview
+    messages.forEach((msg, idx) => {
+        const contentPreview = typeof msg.content === 'string' 
+            ? msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
+            : 'non-string content';
+        console.log(`[AI-CALL-${callId}] Message ${idx + 1}:`, { role: msg.role, contentLength: typeof msg.content === 'string' ? msg.content.length : 'N/A', preview: contentPreview });
+    });
+    
     // Increased retries for robust roleplay experience
     const maxRetries = 6;
     let lastError;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const attemptTimestamp = new Date().toISOString();
+        
         try {
+            console.log(`[AI-CALL-${callId}] ATTEMPT ${attempt + 1}/${maxRetries + 1} at ${attemptTimestamp}`);
+
             const token = await getAuthToken();
             const headers = { "Content-Type": "application/json" };
             if (token) {
                 headers["Authorization"] = `Bearer ${token}`;
+                console.log(`[AI-CALL-${callId}] Using authentication token (length: ${token.length})`);
+            } else {
+                console.log(`[AI-CALL-${callId}] No auth token available, proceeding without authentication`);
             }
 
+            console.log(`[AI-CALL-${callId}] Sending request to ${AI_API_ENDPOINT}`);
             const response = await fetch(AI_API_ENDPOINT, {
                 method: "POST",
                 headers: headers,
                 body: JSON.stringify(requestBody)
             });
 
+            const responseTime = new Date().toISOString();
+            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}:`, {
+                status: response.status,
+                statusText: response.statusText,
+                contentType: response.headers.get('content-type')
+            });
+
             // If rate limited, retry with backoff
             if (response.status === 429) {
                 if (attempt < maxRetries) {
                     const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-                    console.warn(`Rate limit hit. Retrying in ${backoffMs}ms...`);
+                    console.warn(`[AI-CALL-${callId}] Rate limit hit (429). Retrying in ${backoffMs}ms...`);
                     await new Promise(resolve => setTimeout(resolve, backoffMs));
                     continue;
                 }
@@ -2360,8 +2635,14 @@ async function callAI(messages, expectJson = false, options = {}) {
                 const errorData = await response.json().catch(() => ({}));
                 const msg = errorData.message || errorData.error || response.statusText;
                 
+                console.error(`[AI-CALL-${callId}] ERROR Response (Status ${response.status}):`, {
+                    message: msg,
+                    fullError: errorData,
+                    responseSize: response.headers.get('content-length')
+                });
+                
                 if (response.status === 401 || response.status === 403) {
-                    throw new Error(`${msg || 'Sign in required to use AI features.'} (Status ${response.status})`);
+                    throw new Error(`${msg || 'Authentication failed'} (Status ${response.status})`);
                 }
                 throw new Error(`API error (${response.status}): ${msg}`);
             }
@@ -2370,24 +2651,71 @@ async function callAI(messages, expectJson = false, options = {}) {
             
             // Handle response format
             if (data.choices && data.choices[0]?.message?.content) {
-                return data.choices[0].message.content;
+                const responseContent = data.choices[0].message.content;
+                const responseLength = typeof responseContent === 'string' ? responseContent.length : JSON.stringify(responseContent).length;
+                
+                console.log(`[AI-CALL-${callId}] SUCCESS - Response received`, {
+                    contentLength: responseLength,
+                    hasChoices: !!data.choices,
+                    choicesCount: data.choices.length,
+                    finishReason: data.choices[0]?.finish_reason,
+                    totalTokens: data.usage?.total_tokens,
+                    completionTokens: data.usage?.completion_tokens
+                });
+
+                logAICall('API_SUCCESS', {
+                    callId,
+                    attempt: attempt + 1,
+                    responseLength,
+                    finishReason: data.choices[0]?.finish_reason,
+                    tokens: data.usage
+                });
+
+                return responseContent;
             }
             
+            console.error(`[AI-CALL-${callId}] Invalid response format:`, data);
             throw new Error('Invalid API response format');
             
         } catch (error) {
             lastError = error;
-            console.warn(`AI call attempt ${attempt + 1} failed:`, error.message);
+            const errorTime = new Date().toISOString();
+            console.warn(`[AI-CALL-${callId}] Attempt ${attempt + 1} failed at ${errorTime}:`, {
+                error: error.message,
+                stack: error.stack?.split('\n')[0],
+                type: error.constructor.name
+            });
+
+            logAICall('API_ERROR', {
+                callId,
+                attempt: attempt + 1,
+                error: error.message,
+                status: error.status
+            });
             
             if (attempt < maxRetries) {
                 // Exponential backoff before retry
                 const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+                console.log(`[AI-CALL-${callId}] Exponential backoff: waiting ${backoffMs}ms before retry...`);
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
             }
         }
     }
     
     // All retries exhausted
+    const failureTime = new Date().toISOString();
+    console.error(`[AI-CALL-${callId}] ALL RETRIES EXHAUSTED at ${failureTime}:`, {
+        totalAttempts: maxRetries + 1,
+        lastError: lastError?.message,
+        totalDuration: `${Date.now() - new Date(requestTimestamp).getTime()}ms`
+    });
+
+    logAICall('API_FAILED_ALL_RETRIES', {
+        callId,
+        maxAttempts: maxRetries + 1,
+        lastError: lastError?.message
+    });
+
     if (lastError) {
         throw new Error(`AI service unavailable: ${lastError.message}`);
     }
@@ -2405,6 +2733,28 @@ function escapeHtml(text) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
+/**
+ * Export logs for debugging
+ */
+window.getRoleplayLogs = function() {
+    return {
+        scenarioLogs: window.roleplayLogs || [],
+        aiLogs: window.roleplayAILogs || []
+    };
+};
+
+window.downloadRoleplayLogs = function() {
+    const logs = window.getRoleplayLogs();
+    const logContent = JSON.stringify(logs, null, 2);
+    const blob = new Blob([logContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `roleplay-logs-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
 
 // Make functions available globally
 window.selectEvent = selectEvent;

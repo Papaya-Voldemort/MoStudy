@@ -385,13 +385,16 @@ const handleAIRequest = async (req, res) => {
   }
 };
 
-// enforce auth on protected endpoints
-app.use(jwtCheck);
+// ==================== PUBLIC AI ENDPOINTS ====================
+// These are accessible without authentication - anyone can use AI roleplay features
 
-// Auth-only AI endpoints (locked)
 app.post('/api/ai/chat', rateLimit({ windowMs: 60 * 1000, max: 30 }), handleAIRequest);
 app.post('/api/ai/review', rateLimit({ windowMs: 60 * 1000, max: 20 }), handleAIRequest);
 
+// enforce auth on protected endpoints
+app.use(jwtCheck);
+
+// Auth-only endpoints
 app.get('/api/authorized', function (req, res) {
   res.send('Secured Resource');
 });
