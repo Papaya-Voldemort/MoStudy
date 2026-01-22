@@ -1238,40 +1238,6 @@ button, a, input[type="button"], input[type="submit"] {
   to { transform: rotate(360deg); }
 }
 
-/* Judge Progress Bar Styles */
-.judge-progress-bar {
-  transition: width 0.3s ease-out;
-}
-
-/* Pulsing animation for active progress */
-@keyframes progress-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-[id^="judge-progress-bar-"]:not([style*="width: 100%"]):not([style*="width: 0%"]) {
-  animation: progress-pulse 1.5s ease-in-out infinite;
-}
-
-/* Shimmer effect on progress bar */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-[id^="judge-progress-bar-"].bg-blue-500,
-[id^="judge-progress-bar-"].bg-purple-500,
-[id^="judge-progress-bar-"].bg-pink-500 {
-  background-size: 200% 100%;
-  background-image: linear-gradient(
-    90deg,
-    currentColor 0%,
-    rgba(255,255,255,0.3) 50%,
-    currentColor 100%
-  );
-  animation: shimmer 2s linear infinite;
-}
-
 #ai-summary-panel {
   animation: fadeInUp 0.5s ease-out;
 }

@@ -222,6 +222,10 @@ let appState = {
     qaAudioMimeType: null,
     audioProcessingPromise: null,
 
+    // Transcript prep (chunked)
+    mainTranscriptPrepared: false,
+    qaTranscriptPrepared: false,
+
     // Scenario generation UI
     generationStatusInterval: null,
 
@@ -1078,6 +1082,7 @@ function getAudioFormatFromMime(mimeType) {
     if (mt.includes('audio/mpeg') || mt.includes('audio/mp3')) return 'mp3';
     if (mt.includes('audio/webm')) return 'webm';
     if (mt.includes('audio/ogg')) return 'ogg';
+    if (mt.includes('audio/wav') || mt.includes('audio/wave')) return 'wav';
     return 'mp3';
 }
 
@@ -1382,6 +1387,132 @@ async function processAudioForUpload(blob, target) {
     return processedBlob;
 }
 
+/**
+ * Split an AudioBuffer into overlapping chunks.
+ */
+function splitAudioBufferWithOverlap(audioBuffer, audioContext, chunkDurationMs = 60000, overlapMs = 2000) {
+    const sampleRate = audioBuffer.sampleRate;
+    const chunkSize = Math.floor(sampleRate * (chunkDurationMs / 1000));
+    const overlapSize = Math.floor(sampleRate * (overlapMs / 1000));
+    const totalSamples = audioBuffer.length;
+
+    const chunks = [];
+    let start = 0;
+
+    while (start < totalSamples) {
+        const end = Math.min(start + chunkSize, totalSamples);
+        const length = end - start;
+        const chunkBuffer = audioContext.createBuffer(1, length, sampleRate);
+
+        const channelData = audioBuffer.getChannelData(0).slice(start, end);
+        chunkBuffer.copyToChannel(channelData, 0);
+
+        chunks.push({
+            buffer: chunkBuffer,
+            startSample: start,
+            endSample: end,
+            hasOverlapStart: start > 0,
+            hasOverlapEnd: end < totalSamples
+        });
+
+        if (end >= totalSamples) break;
+        start = Math.max(0, end - overlapSize);
+    }
+
+    return chunks;
+}
+
+/**
+ * Merge chunk transcripts with simple overlap de-duplication.
+ */
+function mergeChunkTranscript(existing, next) {
+    const prev = (existing || '').trim();
+    const curr = (next || '').trim();
+    if (!prev) return curr;
+    if (!curr) return prev;
+
+    const prevWords = prev.split(/\s+/);
+    const currWords = curr.split(/\s+/);
+    const maxOverlap = Math.min(20, prevWords.length, currWords.length);
+
+    let overlapIndex = 0;
+    for (let i = maxOverlap; i > 0; i--) {
+        const prevTail = prevWords.slice(-i).join(' ').toLowerCase();
+        const currHead = currWords.slice(0, i).join(' ').toLowerCase();
+        if (prevTail === currHead) {
+            overlapIndex = i;
+            break;
+        }
+    }
+
+    return overlapIndex > 0
+        ? `${prev} ${currWords.slice(overlapIndex).join(' ')}`.trim()
+        : `${prev} ${curr}`.trim();
+}
+
+/**
+ * Transcribe audio in chunks to avoid size limits.
+ */
+async function transcribeAudioInChunks(blob, label = 'audio') {
+    if (!blob || blob.size === 0) return '';
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const chunks = splitAudioBufferWithOverlap(audioBuffer, audioContext, 60000, 2000);
+    let combined = '';
+
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const chunkBlob = await audioBufferToBlob(chunk.buffer, 'audio/wav');
+        const chunkBase64 = await blobToBase64(chunkBlob);
+
+        const systemPrompt = `You are a precise transcription engine. Return ONLY the spoken words as plain text. Do not add labels or punctuation if not spoken.`;
+        const userPrompt = `Transcribe this ${label} chunk ${i + 1} of ${chunks.length}. If this chunk overlaps with the previous one, avoid repeating any words you already said at the start.`;
+
+        const response = await callAI([
+            { role: 'system', content: systemPrompt },
+            {
+                role: 'user',
+                content: [
+                    { type: 'text', text: userPrompt },
+                    {
+                        type: 'input_audio',
+                        input_audio: {
+                            data: chunkBase64,
+                            format: 'wav'
+                        }
+                    }
+                ]
+            }
+        ], false);
+
+        combined = mergeChunkTranscript(combined, response);
+    }
+
+    audioContext.close();
+    return combined.trim();
+}
+
+async function prepareTranscriptsForJudging() {
+    if (!appState.mainTranscriptPrepared && appState.mainAudioBlob) {
+        const chunked = await transcribeAudioInChunks(appState.mainAudioBlob, 'presentation');
+        if (chunked && chunked.length > (appState.mainTranscript || '').length) {
+            appState.mainTranscript = chunked;
+        }
+        appState.mainTranscriptPrepared = true;
+    }
+
+    if (!appState.qaTranscriptPrepared && appState.qaAudioBlob) {
+        const chunked = await transcribeAudioInChunks(appState.qaAudioBlob, 'Q&A');
+        if (chunked && chunked.length > (appState.qaTranscript || '').length) {
+            appState.qaTranscript = chunked;
+        }
+        appState.qaTranscriptPrepared = true;
+    }
+}
+
 function getAudioPayload(target) {
     // Return the base64 audio for the specific target
     if (target === 'main' && appState.mainAudioBase64) {
@@ -1585,24 +1716,12 @@ OUTPUT FORMAT:
 Return ONLY a JSON array of strings.
 Example: ["Question 1?", "Question 2?"]`;
 
-        const audioPayload = getAudioPayload('main');
+        await prepareTranscriptsForJudging();
         const transcript = (appState.mainTranscript || '').trim();
         
         const content = [
             { type: "text", text: `SCENARIO:\n${appState.generatedScenario}\n\nSTUDENT PRESENTATION (TRANSCRIPT):\n${transcript || '(No transcript captured)'}\n\nGenerate 2 follow-up questions that reference what they said (tradeoffs, risks, implementation details).` }
         ];
-
-        if (audioPayload) {
-             content.push({
-                type: "input_audio",
-                input_audio: {
-                    data: audioPayload.data,
-                    format: audioPayload.format || "mp3"
-                }
-             });
-        } else {
-            content[0].text += "\n\n(No audio was recorded. Generate generic questions based on the scenario.)";
-        }
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
@@ -1712,6 +1831,9 @@ async function startJudging() {
     if (resultsSection) resultsSection.classList.add('hidden');
     
     appState.judgeResults = [];
+
+    // Prepare chunked transcripts before judging to avoid audio size limits
+    await prepareTranscriptsForJudging();
     
     // Run all three judges in parallel
     const judgePromises = appState.selectedJudges.map((judge, index) => 
@@ -1735,31 +1857,11 @@ async function startJudging() {
 
 async function runJudgeEvaluation(judge, index) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
-    const progressBar = document.getElementById(`judge-progress-bar-${index}`);
-    const progressText = document.getElementById(`judge-progress-text-${index}`);
-    
-    // Reset progress bar
-    if (progressBar) {
-        progressBar.style.width = '0%';
-        progressBar.classList.remove('bg-green-500');
-        progressBar.classList.add('bg-blue-500');
-    }
-    if (progressText) progressText.textContent = 'Starting...';
     
     try {
         // Prepare audio payloads
-        const mainAudio = getAudioPayload('main');
-        const qaAudio = getAudioPayload('qa');
         const mainTranscriptText = (appState.mainTranscript || '').trim();
         const qaTranscriptText = (appState.qaTranscript || '').trim();
-        
-        // Safety check: Ensure we have at least main audio (or this is a test/debug run)
-        // MOLEARN MODIFICATION: Allow empty audio to be sent to model (user override)
-        if (!mainAudio && !qaAudio) {
-             console.warn(`Judge ${index+1}: No audio detected, but proceeding with empty payload.`);
-        }
-
-        const effectiveMainAudio = mainAudio || { data: "", mimeType: "audio/mpeg", format: "mp3" };
         
         const judgeVoices = {
             'Dr. Margaret Chen': 'You are analytical and theory-focused.',
@@ -1803,43 +1905,13 @@ OUTPUT JSON:
 
         // Build Multi-modal Content
         const userContent = [
-            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nNOTE: Audio may be included if available and supported.` },
-            { 
-                type: "input_audio", 
-                input_audio: { 
-                    data: effectiveMainAudio.data, 
-                    format: effectiveMainAudio.format || "mp3" 
-                } 
-            }
+            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nNOTE: Audio was chunked and transcribed to avoid upload limits.` }
         ];
 
-        if (qaAudio) {
-             userContent.push({ 
-                type: "input_audio", 
-                input_audio: { 
-                    data: qaAudio.data, 
-                    format: qaAudio.format || "mp3" 
-                } 
-            });
-        }
-
-        // Use streaming API for accurate progress tracking
-        const response = await callAIWithStreaming(
-            [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userContent }
-            ],
-            true, // expects JSON
-            (progress) => {
-                // Update progress bar based on streaming progress
-                if (progressBar) {
-                    progressBar.style.width = `${Math.min(progress.percent, 95)}%`;
-                }
-                if (progressText) {
-                    progressText.textContent = `Analyzing... ${progress.tokens} tokens`;
-                }
-            }
-        );
+        const response = await callAI([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent }
+        ], true); // true = expects JSON
 
         // Parse response
         let evaluation = JSON.parse(response);
@@ -1854,14 +1926,6 @@ OUTPUT JSON:
             evaluation: evaluation
         };
         
-        // Update progress to complete
-        if (progressBar) {
-            progressBar.style.width = '100%';
-            progressBar.classList.remove('bg-blue-500');
-            progressBar.classList.add('bg-green-500');
-        }
-        if (progressText) progressText.textContent = 'Complete!';
-        
         // Update progress indicator
         if (judgeProgressItems[index]) {
             judgeProgressItems[index].innerHTML = `
@@ -1873,14 +1937,6 @@ OUTPUT JSON:
         }
     } catch (error) {
         console.error(`Error with judge ${index + 1}:`, error);
-        
-        // Update progress bar to show error state
-        if (progressBar) {
-            progressBar.style.width = '100%';
-            progressBar.classList.remove('bg-blue-500', 'bg-purple-500', 'bg-pink-500');
-            progressBar.classList.add('bg-red-500');
-        }
-        if (progressText) progressText.textContent = 'Error - Click retry';
         
         // Create fallback evaluation
         appState.judgeResults[index] = {
@@ -2246,6 +2302,8 @@ function startNewSession() {
         mainAudioMimeType: null,
         qaAudioMimeType: null,
         audioProcessingPromise: null,
+        mainTranscriptPrepared: false,
+        qaTranscriptPrepared: false,
         generationStatusInterval: null,
         qaTiming: 'before'
     };
@@ -2259,134 +2317,6 @@ function startNewSession() {
 }
 
 // ==================== UTILITY FUNCTIONS ====================
-
-/**
- * Call AI with streaming support for progress tracking.
- * @param {Array} messages - Chat messages
- * @param {boolean} expectJson - Whether to expect JSON response
- * @param {Function} onProgress - Callback for progress updates { tokens, percent, chunk }
- * @returns {Promise<string>} - Complete response content
- */
-async function callAIWithStreaming(messages, expectJson = false, onProgress = null) {
-    const requestBody = {
-        messages: messages,
-        temperature: expectJson ? 0.6 : 0.8,
-        model: AI_MODEL,
-        response_format: expectJson ? { type: "json_object" } : undefined,
-        stream: true // Enable streaming
-    };
-    
-    const maxRetries = 6;
-    let lastError;
-    
-    // Estimate expected tokens for progress calculation (JSON evaluation ~800-1200 tokens)
-    const EXPECTED_TOKENS = 1000;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-            const token = await getAuthToken();
-            const headers = { "Content-Type": "application/json" };
-            if (token) {
-                headers["Authorization"] = `Bearer ${token}`;
-            }
-
-            const response = await fetch(AI_API_ENDPOINT, {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify(requestBody)
-            });
-
-            if (response.status === 429) {
-                if (attempt < maxRetries) {
-                    const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-                    console.warn(`Rate limit hit. Retrying in ${backoffMs}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, backoffMs));
-                    continue;
-                }
-            }
-            
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const msg = errorData.message || errorData.error || response.statusText;
-                throw new Error(`API error (${response.status}): ${msg}`);
-            }
-
-            // Check if response is actually streaming (SSE)
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('text/event-stream')) {
-                // Handle SSE stream
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let fullContent = '';
-                let totalTokens = 0;
-                
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-                    
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed || trimmed === 'data: [DONE]') continue;
-                        if (!trimmed.startsWith('data: ')) continue;
-                        
-                        try {
-                            const json = JSON.parse(trimmed.slice(6));
-                            
-                            if (json.type === 'progress') {
-                                totalTokens = json.tokens;
-                                if (onProgress) {
-                                    onProgress({
-                                        tokens: totalTokens,
-                                        percent: Math.min(95, (totalTokens / EXPECTED_TOKENS) * 100),
-                                        chunk: json.chunk
-                                    });
-                                }
-                            } else if (json.type === 'complete') {
-                                fullContent = json.content;
-                            } else if (json.type === 'error') {
-                                throw new Error(json.message);
-                            }
-                        } catch (e) {
-                            // Skip malformed JSON lines
-                        }
-                    }
-                }
-                
-                if (onProgress) {
-                    onProgress({ tokens: totalTokens, percent: 100, chunk: '' });
-                }
-                
-                return fullContent;
-            } else {
-                // Non-streaming response (fallback)
-                const data = await response.json();
-                if (data.choices && data.choices[0]?.message?.content) {
-                    return data.choices[0].message.content;
-                }
-                throw new Error('Invalid API response format');
-            }
-            
-        } catch (error) {
-            lastError = error;
-            console.warn(`Streaming AI call attempt ${attempt + 1} failed:`, error.message);
-            
-            if (attempt < maxRetries) {
-                const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-                await new Promise(resolve => setTimeout(resolve, backoffMs));
-            }
-        }
-    }
-    
-    if (lastError) {
-        throw new Error(`AI service unavailable: ${lastError.message}`);
-    }
-    throw new Error('AI service unavailable');
-}
 
 async function callAI(messages, expectJson = false, options = {}) {
     const jsonType = options.jsonType || (expectJson ? 'object' : null);
