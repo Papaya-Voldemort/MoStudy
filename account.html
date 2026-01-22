@@ -11,33 +11,54 @@
 <body class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-bg); color: var(--color-text); font-family: var(--font-main);">
 
     <!-- Header -->
-    <header class="text-white p-3 sm:p-4 shadow-lg flex justify-between items-center z-10 shrink-0 gap-2 sm:gap-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); border-bottom: 1px solid var(--color-border);">
+    <header class="text-white p-3 sm:p-4 shadow-lg flex items-center z-10 shrink-0 gap-2 sm:gap-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); border-bottom: 1px solid var(--color-border);">
         <div class="flex items-center gap-2 sm:gap-3 min-w-0">
             <div class="font-extrabold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm tracking-wide" style="background-color: var(--color-white); color: var(--color-primary); font-family: var(--font-heading);">MoStudy</div>
             <h1 class="font-semibold text-sm sm:text-lg tracking-tight hidden sm:block truncate" style="font-family: var(--font-heading);">Practice Exams</h1>
-            
-            <nav class="flex items-center gap-5 sm:gap-8 ml-4 sm:ml-8">
-                <a href="/" class="text-white hover:opacity-80 transition font-bold text-xs sm:text-sm flex items-center py-1 sm:py-1.5">
-                    <span class="border-b-2 border-transparent pb-0.5">Home</span>
-                </a>
-                <a href="/study" class="text-white hover:opacity-80 transition font-bold text-xs sm:text-sm flex items-center py-1 sm:py-1.5">
-                    <span class="border-b-2 border-transparent pb-0.5">Study</span>
-                </a>
-                <a href="/roleplay" class="text-white hover:opacity-80 transition font-bold text-xs sm:text-sm flex items-center py-1 sm:py-1.5">
-                    <span class="border-b-2 border-transparent pb-0.5">Role Plays</span>
-                </a>
-                <a href="/account" class="text-white hover:opacity-80 transition font-bold text-xs sm:text-sm flex items-center py-1 sm:py-1.5">
-                    <span class="border-b-2 border-white pb-0.5">Account</span>
-                </a>
-            </nav>
         </div>
-        <div class="flex items-center gap-2 sm:gap-4">
-            <button id="theme-toggle" class="inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-white/95 border border-white/30 hover:bg-white/15 transition" style="background-color: rgba(255,255,255,0.12);">
-                <span data-theme-icon>🌙</span>
-                <span data-theme-label class="hidden sm:inline">Dark</span>
+        
+        <nav class="hidden md:flex items-center gap-6 lg:gap-8 ml-6">
+            <a href="/" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Home</span>
+            </a>
+            <a href="/study" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Study</span>
+            </a>
+            <a href="/roleplay" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Role Plays</span>
+            </a>
+            <a href="/account" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-white pb-0.5">Account</span>
+            </a>
+        </nav>
+
+        <div class="flex items-center gap-2 sm:gap-4 ml-auto">
+            <button id="mobile-menu-btn" class="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg border border-white/30 text-white/95" style="background-color: rgba(255,255,255,0.12);" aria-label="Open navigation">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
             </button>
         </div>
     </header>
+
+    <div id="mobile-nav" class="mobile-nav" aria-hidden="true">
+        <div class="mobile-nav__overlay" data-mobile-overlay></div>
+        <div class="mobile-nav__panel" role="dialog" aria-modal="true" aria-label="Site navigation">
+            <div class="mobile-nav__header">
+                <div class="mobile-nav__brand">MoStudy</div>
+                <button class="mobile-nav__close" type="button" data-mobile-close aria-label="Close navigation">Close</button>
+            </div>
+            <nav class="mobile-nav__links">
+                <a href="/" class="mobile-nav__link">Home</a>
+                <a href="/study" class="mobile-nav__link">Study</a>
+                <a href="/roleplay" class="mobile-nav__link">Role Plays</a>
+                <a href="/account" class="mobile-nav__link is-active">Account</a>
+            </nav>
+            <div class="mobile-nav__footer">Manage preferences and your MoStudy account.</div>
+        </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="flex-grow relative overflow-y-auto p-6 sm:p-12 flex flex-col items-center scroll-smooth" style="background-color: var(--color-bg);">
@@ -83,6 +104,18 @@
                 </div>
                 
                 <div class="space-y-10">
+                    <!-- Theme Toggle -->
+                    <div class="flex items-center justify-between group">
+                        <div class="flex-grow">
+                            <label for="theme-toggle" class="block font-bold text-xl text-slate-800 dark:text-slate-100 mb-1 cursor-pointer">Appearance</label>
+                            <p class="text-slate-600 dark:text-slate-400 max-w-xl">Switch between light and dark mode. Your choice is saved for every device.</p>
+                        </div>
+                        <button id="theme-toggle" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-blue-500 hover:shadow-sm transition">
+                            <span data-theme-icon>🌙</span>
+                            <span data-theme-label>Dark</span>
+                        </button>
+                    </div>
+
                     <!-- Notification Toggle -->
                     <div class="flex items-center justify-between group">
                         <div class="flex-grow">
@@ -136,6 +169,7 @@
     </main>
 
     <script src="theme.js" defer></script>
+    <script src="nav.js" defer></script>
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.0/auth0-spa-js.production.js"></script>
     <script src="app.js" defer></script>
     <script src="auth.js" defer></script>
