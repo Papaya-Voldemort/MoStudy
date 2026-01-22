@@ -1427,6 +1427,13 @@ function blobToBase64(blob) {
  */
 async function trimSilenceFromAudio(blob) {
     try {
+        // Preserve MP3/MPEG inputs as-is to avoid re-encoding to WAV (which happens during AudioBuffer -> WAV conversion)
+        const originalMime = blob.type || '';
+        if (originalMime.toLowerCase().includes('mpeg') || originalMime.toLowerCase().includes('mp3')) {
+            console.log('Skipping trim: preserving original MP3/MPEG format to avoid WAV re-encoding.');
+            return blob;
+        }
+
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const arrayBuffer = await blob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
