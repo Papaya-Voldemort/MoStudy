@@ -1663,21 +1663,106 @@ async function transcribeAudioInChunks(blob, label = 'audio') {
 }
 
 async function prepareTranscriptsForJudging() {
+    console.log('[AUDIO-DEBUG] prepareTranscriptsForJudging started:', {
+        hasMainAudioBlob: !!appState.mainAudioBlob,
+        mainAudioSize: appState.mainAudioBlob?.size || 0,
+        hasQAudioBlob: !!appState.qaAudioBlob,
+        qaAudioSize: appState.qaAudioBlob?.size || 0,
+        currentMainTranscriptLength: appState.mainTranscript?.length || 0,
+        currentQATranscriptLength: appState.qaTranscript?.length || 0
+    });
+
     if (!appState.mainTranscriptPrepared && appState.mainAudioBlob) {
-        const chunked = await transcribeAudioInChunks(appState.mainAudioBlob, 'presentation');
-        if (chunked && chunked.length > (appState.mainTranscript || '').length) {
-            appState.mainTranscript = chunked;
+        console.log('[AUDIO-DEBUG] Transcribing main presentation audio...');
+        try {
+            const chunked = await transcribeAudioInChunks(appState.mainAudioBlob, 'presentation');
+            console.log('[AUDIO-DEBUG] Main transcription complete:', {
+                transcriptLength: chunked?.length || 0,
+                originalTranscriptLength: appState.mainTranscript?.length || 0
+            });
+            if (chunked && chunked.length > (appState.mainTranscript || '').length) {
+                appState.mainTranscript = chunked;
+                console.log('[AUDIO-DEBUG] Main transcript updated from audio');
+            }
+        } catch (e) {
+            console.error('[AUDIO-DEBUG] Error transcribing main audio:', e);
         }
         appState.mainTranscriptPrepared = true;
     }
 
     if (!appState.qaTranscriptPrepared && appState.qaAudioBlob) {
-        const chunked = await transcribeAudioInChunks(appState.qaAudioBlob, 'Q&A');
-        if (chunked && chunked.length > (appState.qaTranscript || '').length) {
-            appState.qaTranscript = chunked;
+        console.log('[AUDIO-DEBUG] Transcribing Q&A audio...');
+        try {
+            const chunked = await transcribeAudioInChunks(appState.qaAudioBlob, 'Q&A');
+            console.log('[AUDIO-DEBUG] Q&A transcription complete:', {
+                transcriptLength: chunked?.length || 0,
+                originalTranscriptLength: appState.qaTranscript?.length || 0
+            });
+            if (chunked && chunked.length > (appState.qaTranscript || '').length) {
+                appState.qaTranscript = chunked;
+                console.log('[AUDIO-DEBUG] Q&A transcript updated from audio');
+            }
+        } catch (e) {
+            console.error('[AUDIO-DEBUG] Error transcribing Q&A audio:', e);
         }
         appState.qaTranscriptPrepared = true;
     }
+}
+
+/**
+ * Prepare content for judge evaluation with audio priority and fallback to transcripts
+ */
+function prepareJudgeContent() {
+    const mainAudioPayload = getAudioPayload('main');
+    const qaAudioPayload = getAudioPayload('qa');
+    
+    const mainTranscriptText = (appState.mainTranscript || '').trim();
+    const qaTranscriptText = (appState.qaTranscript || '').trim();
+    
+    console.log('[AUDIO-SOURCE-CHECK] Main audio sources:');
+    console.log('  - appState.mainAudioBlob exists:', !!appState.mainAudioBlob, appState.mainAudioBlob?.size || 0, 'bytes');
+    console.log('  - appState.mainAudioBase64 exists:', !!appState.mainAudioBase64, appState.mainAudioBase64?.length || 0, 'chars');
+    console.log('  - appState.mainAudioMimeType:', appState.mainAudioMimeType);
+    console.log('  - mainTranscript exists:', !!mainTranscriptText, 'length:', mainTranscriptText.length);
+    
+    console.log('[AUDIO-SOURCE-CHECK] Q&A audio sources:');
+    console.log('  - appState.qaAudioBlob exists:', !!appState.qaAudioBlob, appState.qaAudioBlob?.size || 0, 'bytes');
+    console.log('  - appState.qaAudioBase64 exists:', !!appState.qaAudioBase64, appState.qaAudioBase64?.length || 0, 'chars');
+    console.log('  - appState.qaAudioMimeType:', appState.qaAudioMimeType);
+    console.log('  - qaTranscript exists:', !!qaTranscriptText, 'length:', qaTranscriptText.length);
+    
+    console.log('[AUDIO-DEBUG] Preparing judge content:', {
+        hasMainAudio: !!mainAudioPayload,
+        mainAudioSize: mainAudioPayload?.data?.length || 0,
+        mainAudioSizeKB: mainAudioPayload ? `${(mainAudioPayload.data.length / 1024).toFixed(1)} KB` : '(none)',
+        hasQAAudio: !!qaAudioPayload,
+        qaAudioSize: qaAudioPayload?.data?.length || 0,
+        qaAudioSizeKB: qaAudioPayload ? `${(qaAudioPayload.data.length / 1024).toFixed(1)} KB` : '(none)',
+        mainTranscriptLength: mainTranscriptText.length,
+        qaTranscriptLength: qaTranscriptText.length,
+        mainAudioBlob: appState.mainAudioBlob?.size || 0,
+        qaAudioBlob: appState.qaAudioBlob?.size || 0
+    });
+
+    const content = {
+        mainAudio: mainAudioPayload,
+        qaAudio: qaAudioPayload,
+        mainTranscript: mainTranscriptText,
+        qaTranscript: qaTranscriptText,
+        usageMethod: {
+            main: mainAudioPayload ? 'AUDIO (with fallback to STT)' : 'STT_TRANSCRIPT_ONLY',
+            qa: qaAudioPayload ? 'AUDIO (with fallback to STT)' : 'STT_TRANSCRIPT_ONLY'
+        }
+    };
+
+    console.log('[AUDIO-DEBUG] Judge content prepared - METHOD:', {
+        main: content.usageMethod.main,
+        qa: content.usageMethod.qa,
+        mainContentBytes: mainAudioPayload ? mainAudioPayload.data.length : 0,
+        qaContentBytes: qaAudioPayload ? qaAudioPayload.data.length : 0
+    });
+
+    return content;
 }
 
 function getAudioPayload(target) {
@@ -2034,16 +2119,40 @@ async function startJudging() {
     
     appState.judgeResults = [];
 
+    console.log('[JUDGING] Starting judge evaluation process...');
+
     // Prepare chunked transcripts before judging to avoid audio size limits
     await prepareTranscriptsForJudging();
+
+    // Prepare judge content with audio priority
+    const judgeContent = prepareJudgeContent();
+    appState.judgeContent = judgeContent; // Store for debugging
+    
+    console.log('[JUDGING] Judge content prepared, starting evaluations:', {
+        mainContentSource: judgeContent.usageMethod.main,
+        qaContentSource: judgeContent.usageMethod.qa,
+        audioAvailable: !!judgeContent.mainAudio || !!judgeContent.qaAudio
+    });
     
     // Run all three judges in parallel
     const judgePromises = appState.selectedJudges.map((judge, index) => 
-        runJudgeEvaluation(judge, index)
+        runJudgeEvaluation(judge, index, judgeContent)
     );
     
     try {
         await Promise.all(judgePromises);
+        
+        // Log final summary of what was used for each judge
+        console.log(`[AUDIO-TRANSMISSION-SUMMARY] All judges completed:`);
+        console.log(`[AUDIO-TRANSMISSION-SUMMARY] Main presentation from: ${judgeContent.mainAudio ? 'AUDIO FILE' : 'STT TRANSCRIPT'}`);
+        console.log(`[AUDIO-TRANSMISSION-SUMMARY] Q&A responses from: ${judgeContent.qaAudio ? 'AUDIO FILE' : 'STT TRANSCRIPT'}`);
+        if (judgeContent.mainAudio) {
+            console.log(`[AUDIO-TRANSMISSION-SUMMARY] Main audio size: ${(judgeContent.mainAudio.data.length / 1024).toFixed(1)} KB (${judgeContent.mainAudio.format})`);
+        }
+        if (judgeContent.qaAudio) {
+            console.log(`[AUDIO-TRANSMISSION-SUMMARY] Q&A audio size: ${(judgeContent.qaAudio.data.length / 1024).toFixed(1)} KB (${judgeContent.qaAudio.format})`);
+        }
+        
         displayJudgingResults();
     } catch (error) {
         console.error('Error during judging:', error);
@@ -2057,7 +2166,7 @@ async function startJudging() {
     }
 }
 
-async function runJudgeEvaluation(judge, index) {
+async function runJudgeEvaluation(judge, index, judgeContent) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
     
     logAICall('JUDGE_EVALUATION_START', {
@@ -2068,14 +2177,33 @@ async function runJudgeEvaluation(judge, index) {
     });
     
     try {
-        // Prepare audio payloads
-        const mainTranscriptText = (appState.mainTranscript || '').trim();
-        const qaTranscriptText = (appState.qaTranscript || '').trim();
+        // Use prepared judge content or prepare now
+        if (!judgeContent) {
+            judgeContent = prepareJudgeContent();
+        }
+
+        const mainAudio = judgeContent.mainAudio;
+        const qaAudio = judgeContent.qaAudio;
+        const mainTranscriptText = judgeContent.mainTranscript;
+        const qaTranscriptText = judgeContent.qaTranscript;
         
         console.log(`[JUDGE-${index + 1}] Evaluating with ${judge.name}:`, {
-            mainTranscriptLength: mainTranscriptText.length,
-            qaTranscriptLength: qaTranscriptText.length,
+            mainContentMethod: judgeContent.usageMethod.main,
+            mainContentSize: mainAudio ? mainAudio.data.length : mainTranscriptText.length,
+            qaContentMethod: judgeContent.usageMethod.qa,
+            qaContentSize: qaAudio ? qaAudio.data.length : qaTranscriptText.length,
             questionsCount: appState.qaQuestions.length
+        });
+
+        console.log(`[AUDIO-DEBUG] Judge-${index + 1} using:`, {
+            mainAudioAvailable: !!mainAudio,
+            mainAudioFormat: mainAudio?.format,
+            mainAudioSizeKB: (mainAudio?.data?.length / 1024).toFixed(2),
+            mainTranscriptLength: mainTranscriptText.length,
+            qaAudioAvailable: !!qaAudio,
+            qaAudioFormat: qaAudio?.format,
+            qaAudioSizeKB: (qaAudio?.data?.length / 1024).toFixed(2),
+            qaTranscriptLength: qaTranscriptText.length
         });
         
         const judgeVoices = {
@@ -2095,7 +2223,14 @@ async function runJudgeEvaluation(judge, index) {
         
         const systemPrompt = `You are ${judge.name}, ${judge.title}. 
 PERSONALITY: ${judgeVoice}
-    TASK: Judge an FBLA role play based on the presentation and Q&A responses provided.
+TASK: Judge an FBLA role play based on ONLY the presentation and Q&A responses provided.
+
+CRITICAL INSTRUCTIONS:
+1. You MUST evaluate ONLY what the student actually said in their transcript
+2. Do NOT invent or assume what they said if the transcript is brief or unusual
+3. If the transcript says "this is a test" or other off-topic content, you MUST score appropriately (low) and note they didn't address the scenario
+4. Do NOT hallucinate what the student said - only evaluate their actual words
+5. Be fair but honest about what was actually presented vs. what was required
 
 RUBRIC (Max 100):
 - Understanding (10): Did they grasp the problem?
@@ -2111,7 +2246,7 @@ OUTPUT JSON:
     "scores": { "understanding": 0, "alternatives": 0, "solution": 0, "knowledge": 0, "organization": 0, "delivery": 0, "questions": 0 },
     "total": 0,
     "categoryFeedback": { "understanding": "...", "alternatives": "...", "solution": "...", "knowledge": "...", "organization": "...", "delivery": "...", "questions": "..." },
-    "overallFeedback": "2-3 sentences.",
+    "overallFeedback": "2-3 sentences based ONLY on what was presented.",
     "strengthHighlight": "1 phrase",
     "improvementArea": "1 phrase",
     "personalizedFeedback": "1 sentence in character.",
@@ -2119,16 +2254,123 @@ OUTPUT JSON:
 }`;
 
         // Build Multi-modal Content
-        const userContent = [
-            { type: "text", text: `SCENARIO: ${appState.generatedScenario}\n\nQ&A Questions Asked: ${JSON.stringify(appState.qaQuestions)}\n\nMAIN PRESENTATION (TRANSCRIPT):\n${mainTranscriptText || '(No transcript captured)'}\n\nQ&A RESPONSE (TRANSCRIPT):\n${qaTranscriptText || '(No transcript captured)'}\n\nPLEASE EVALUATE THE STUDENT'S PERFORMANCE USING THE RUBRIC AND RETURN JSON.` }
-        ];
+        const userContent = [];
 
+        // Add scenario text
+        userContent.push({
+            type: "text",
+            text: `SCENARIO:
+${appState.generatedScenario}
+
+---
+
+Q&A QUESTIONS ASKED:
+${appState.qaQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+---`
+        });
+
+        // Try to add main presentation audio first, fallback to transcript
+        if (mainAudio) {
+            console.log(`[AUDIO-DEBUG] Judge-${index + 1}: Sending MAIN AUDIO (${mainAudio.format})`);
+            userContent.push({
+                type: "text",
+                text: `MAIN PRESENTATION (Audio provided below - transcribe and evaluate):`
+            });
+            userContent.push({
+                type: "input_audio",
+                input_audio: {
+                    data: mainAudio.data,
+                    format: mainAudio.format
+                }
+            });
+        } else {
+            console.log(`[AUDIO-DEBUG] Judge-${index + 1}: Main audio unavailable, using STT TRANSCRIPT`);
+            userContent.push({
+                type: "text",
+                text: `ACTUAL MAIN PRESENTATION (STT TRANSCRIPT - audio was not captured):
+${mainTranscriptText || '(No transcript captured)'}`
+            });
+        }
+
+        userContent.push({
+            type: "text",
+            text: `---`
+        });
+
+        // Try to add Q&A audio first, fallback to transcript
+        if (qaAudio) {
+            console.log(`[AUDIO-DEBUG] Judge-${index + 1}: Sending Q&A AUDIO (${qaAudio.format})`);
+            userContent.push({
+                type: "text",
+                text: `Q&A RESPONSE (Audio provided below - transcribe and evaluate):`
+            });
+            userContent.push({
+                type: "input_audio",
+                input_audio: {
+                    data: qaAudio.data,
+                    format: qaAudio.format
+                }
+            });
+        } else {
+            console.log(`[AUDIO-DEBUG] Judge-${index + 1}: Q&A audio unavailable, using STT TRANSCRIPT`);
+            userContent.push({
+                type: "text",
+                text: `ACTUAL Q&A RESPONSE (STT TRANSCRIPT - audio was not captured):
+${qaTranscriptText || '(No transcript captured)'}`
+            });
+        }
+
+        userContent.push({
+            type: "text",
+            text: `---
+
+IMPORTANT: 
+- If audio was provided, transcribe it accurately and evaluate based on what was actually said
+- If only transcripts were provided, evaluate based on the transcript content
+- If the presentation is brief, off-topic, or doesn't address the scenario, score appropriately
+- Do not invent or hallucinate content
+
+RETURN VALID JSON ONLY.`
+        });
+
+        // Log comprehensive content transmission details
+        const contentAnalysis = {
+            totalParts: userContent.length,
+            mainMethod: mainAudio ? `AUDIO (${mainAudio.format})` : 'STT_TRANSCRIPT',
+            qaMethod: qaAudio ? `AUDIO (${qaAudio.format})` : 'STT_TRANSCRIPT',
+            estimatedPayloadSize: userContent.reduce((sum, part) => {
+                if (part.type === 'text') return sum + part.text.length;
+                if (part.input_audio) return sum + (part.input_audio.data?.length || 0);
+                return sum;
+            }, 0),
+            parts: userContent.map((part, i) => {
+                if (part.type === 'text') {
+                    return { index: i, type: 'text', length: part.text.length };
+                } else if (part.input_audio) {
+                    return { 
+                        index: i, 
+                        type: 'input_audio', 
+                        format: part.input_audio.format,
+                        sizeKB: (part.input_audio.data?.length / 1024).toFixed(2)
+                    };
+                }
+                return { index: i, type: 'unknown' };
+            })
+        };
+
+        console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} SENDING:`, contentAnalysis);
+        console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} Main content from: ${mainAudio ? 'ACTUAL AUDIO FILE' : 'STT TRANSCRIPT'}`);
+        console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} Q&A content from: ${qaAudio ? 'ACTUAL AUDIO FILE' : 'STT TRANSCRIPT'}`);
         console.log(`[JUDGE-${index + 1}] Sending evaluation request to AI...`);
         
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userContent }
         ], true); // true = expects JSON
+
+        console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} AI response received (${response.length} chars)`);
+        console.log(`[JUDGE-${index + 1}] Raw AI response (first 500 chars):`, response.substring(0, 500));
 
         // Parse response
         let evaluation = JSON.parse(response);
@@ -2142,12 +2384,14 @@ OUTPUT JSON:
             judgeIndex: index,
             judgeName: judge.name,
             score: evaluation.total,
-            scoreBreakdown: evaluation.scores
+            scoreBreakdown: evaluation.scores,
+            overallFeedback: evaluation.overallFeedback?.substring(0, 100)
         });
 
         console.log(`[JUDGE-${index + 1}] Evaluation complete:`, {
             totalScore: evaluation.total,
-            scores: evaluation.scores
+            scores: evaluation.scores,
+            overallFeedback: evaluation.overallFeedback
         });
         
         appState.judgeResults[index] = {
