@@ -440,7 +440,7 @@ input::placeholder, textarea::placeholder {
   width: 100%;
   min-height: 240px;
   transform-style: preserve-3d;
-  transition: transform 0.4s ease;
+  transition: transform 0.3s ease;
 }
 
 .flashcard-face {
@@ -730,7 +730,7 @@ button, a, input[type="button"], input[type="submit"] {
 
 /* Recording indicator */
 .recording-indicator {
-  animation: pulse 1.5s ease-in-out infinite;
+  animation: pulse 1s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -745,7 +745,7 @@ button, a, input[type="button"], input[type="submit"] {
   border: 2px solid var(--color-border);
   border-top-color: var(--color-primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.6s linear infinite;
 }
 
 .ai-loading-spinner-small {
@@ -754,7 +754,7 @@ button, a, input[type="button"], input[type="submit"] {
   border: 2px solid var(--color-border);
   border-top-color: var(--color-primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.6s linear infinite;
 }
 
 @keyframes spin {
