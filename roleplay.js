@@ -7,7 +7,17 @@
 
 const AI_API_ENDPOINT = "/api/ai/chat";
 // Updated to Google Gemini 3 Flash Preview as requested
-const AI_MODEL = "google/gemini-3-flash-preview"; 
+const AI_MODEL = "google/gemini-3-flash-preview";
+
+// Prompt tuning: examples improve formatting/realism, but large prompts slow responses.
+// These defaults increase example signal while staying reasonably fast.
+const SCENARIO_EXAMPLE_COUNT = 3;
+const SCENARIO_EXAMPLE_CHAR_LIMIT = 1200; // per example
+
+// Speed tuning
+const TRANSCRIBE_CONCURRENCY = 2; // avoid 429s; higher is faster but riskier
+const JUDGING_MODE = 'panel'; // 'panel' (fast single call) | 'parallel' (one call per judge)
+const JUDGING_PREFER_TRANSCRIPT = true; // avoids sending large audio to each judge
 
 // Role plays should feel like official FBLA difficulty (no user difficulty selector).
 const SCENARIO_TARGET_WORDS = 380;
@@ -47,7 +57,7 @@ const SCENARIO_COMPANY_TYPES = [
     "Video Streaming Service",
     "Social Media Platform",
     "Project Management Software",
-    
+
     // Manufacturing & Production
     "Electronics Manufacturer",
     "Automotive Parts Supplier",
@@ -61,7 +71,7 @@ const SCENARIO_COMPANY_TYPES = [
     "Metal Fabrication Company",
     "Paper & Packaging Manufacturer",
     "Agricultural Machinery Maker",
-    
+
     // Retail & Consumer Goods
     "Fashion Retailer",
     "Luxury Goods Producer",
@@ -75,7 +85,7 @@ const SCENARIO_COMPANY_TYPES = [
     "Outdoor Recreation Gear Company",
     "Pet Supplies Brand",
     "Baby Products Manufacturer",
-    
+
     // Services & Finance
     "Consulting Firm",
     "Financial Services Company",
@@ -89,7 +99,7 @@ const SCENARIO_COMPANY_TYPES = [
     "Venture Capital Firm",
     "Executive Recruitment Agency",
     "Market Research Company",
-    
+
     // Specialized Industries
     "Renewable Energy Company",
     "Medical Device Manufacturer",
@@ -272,20 +282,20 @@ let appState = {
     // Event data
     currentEvent: null,
     eventExamples: [],
-    
+
     // Generated content
     generatedScenario: null,
     qaQuestions: [],
-    
+
     // User input
     notes: "",
     mainTranscript: "",
     qaTranscript: "",
-    
+
     // Judging
     selectedJudges: [],
     judgeResults: [],
-    
+
     // Timers
     planningTimeLeft: PLANNING_TIME,
     presentationTimeLeft: PRESENTATION_TIME,
@@ -385,7 +395,7 @@ async function getAuthToken() {
                     audience: "https://mostudy.org/api"
                 },
                 // Force a check if we suspect the token is bad
-                cacheMode: 'on-fast' 
+                cacheMode: 'on-fast'
             });
         }
     } catch (e) {
@@ -413,7 +423,7 @@ async function saveRoleplayReport(totalScore, judgeResults) {
         // Build category scores from judge evaluations
         const categoryScores = {};
         const scoreKeys = ['understanding', 'alternatives', 'solution', 'knowledge', 'organization', 'delivery', 'questions'];
-        
+
         scoreKeys.forEach(key => {
             const scores = judgeResults
                 .map(r => r.evaluation?.scores?.[key] || 0)
@@ -529,14 +539,14 @@ function bindRoleplayInputs() {
 function loadEventCatalog() {
     const eventGrid = document.getElementById('event-grid');
     if (!eventGrid) return;
-    
+
     eventGrid.innerHTML = '';
-    
+
     EVENT_MANIFEST.forEach(event => {
         const card = document.createElement('div');
         card.className = "bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-lg transition cursor-pointer group";
         card.onclick = () => selectEvent(event);
-        
+
         card.innerHTML = `
             <div class="flex items-start gap-4">
                 <div class="w-14 h-14 rounded-xl ${event.color} flex items-center justify-center text-2xl shadow-sm">
@@ -565,7 +575,7 @@ function loadEventCatalog() {
                 </svg>
             </div>
         `;
-        
+
         eventGrid.appendChild(card);
     });
 }
@@ -601,27 +611,27 @@ async function startScenarioGeneration() {
     // Show generation screen
     showScreen('scenario-generation-screen');
     startGenerationStatusLoop();
-    
+
     try {
         // Load example role plays
         await loadEventExamples(appState.currentEvent);
-        
+
         // Generate new scenario
         await generateScenario();
-        
+
         // Select random judges
         selectJudges();
-        
+
         // Show planning screen, display scenario, and start the planning timer
         stopGenerationStatusLoop();
         showScreen('planning-screen');
         displayScenario();
         // Start the 20-minute planning timer automatically
         startPlanningTimer();
-    
+
         // If Q&A timing is "before", generate questions now before presentation
         if (appState.qaTiming === 'before') {
-                generateQAQuestionsBeforePresentation();
+            generateQAQuestionsBeforePresentation();
         }
     } catch (error) {
         stopGenerationStatusLoop();
@@ -690,7 +700,7 @@ function showErrorNotification(message) {
 async function loadEventExamples(event) {
     const examples = [];
     const basePath = event.dataPath + event.examplesFolder;
-    
+
     // Load all example files
     for (let i = 1; i <= event.exampleCount; i++) {
         try {
@@ -703,13 +713,13 @@ async function loadEventExamples(event) {
             console.warn(`Could not load example ${i}:`, e);
         }
     }
-    
+
     if (examples.length === 0) {
         throw new Error('No examples found for this event');
     }
-    
+
     appState.eventExamples = examples;
-    
+
     // Also load event overview
     try {
         const overviewResponse = await fetch(event.dataPath + event.overviewFile);
@@ -739,7 +749,7 @@ function getScenarioDiversityElements() {
     const shuffled = [...SCENARIO_COUNTRIES].sort(() => Math.random() - 0.5);
     const countryOptions = shuffled.slice(0, 3);
     const companyType = getRandomItem(SCENARIO_COMPANY_TYPES);
-    
+
     return {
         baseCountry: "United States",
         countryOptions: countryOptions,
@@ -759,9 +769,9 @@ function logScenarioGeneration(stage, data = {}) {
         event: appState.currentEvent?.title || 'Unknown',
         ...data
     };
-    
+
     console.log(`[ROLEPLAY SCENARIO] ${stage}:`, logEntry);
-    
+
     // Store in session for debugging
     if (!window.roleplayLogs) window.roleplayLogs = [];
     window.roleplayLogs.push(logEntry);
@@ -779,9 +789,9 @@ function logAICall(type, details = {}) {
         endpoint: AI_API_ENDPOINT,
         ...details
     };
-    
+
     console.log(`[ROLEPLAY AI] ${type}:`, logEntry);
-    
+
     if (!window.roleplayAILogs) window.roleplayAILogs = [];
     window.roleplayAILogs.push(logEntry);
 }
@@ -794,11 +804,11 @@ async function generateScenario() {
         progress = Math.min(progress + Math.random() * 15, 90);
         progressBar.style.width = progress + '%';
     }, 500);
-    
+
     try {
-        logScenarioGeneration('START', { 
+        logScenarioGeneration('START', {
             event: appState.currentEvent?.title,
-            exampleCount: appState.eventExamples.length 
+            exampleCount: appState.eventExamples.length
         });
 
         // Get random company type and 3 country options for expansion
@@ -807,38 +817,66 @@ async function generateScenario() {
 
         // Select 2-3 random examples to use as reference
         const shuffled = [...appState.eventExamples].sort(() => Math.random() - 0.5);
-        const selectedExamples = shuffled.slice(0, Math.min(3, shuffled.length));
-        
-        logScenarioGeneration('EXAMPLES_SELECTED', { 
+        const selectedExamples = shuffled.slice(0, Math.min(SCENARIO_EXAMPLE_COUNT, shuffled.length));
+
+        logScenarioGeneration('EXAMPLES_SELECTED', {
             count: selectedExamples.length,
             indices: shuffled.slice(0, selectedExamples.length).map((_, i) => i)
         });
 
-        const systemPrompt = `You are an expert FBLA Role Play scenario designer.
-TARGET EVENT: ${appState.currentEvent.title}
-DIFFICULTY: Official FBLA competitive level (fair, realistic, and solvable in 20 minutes planning + 7 minutes presentation).
+        // the following prompt is tuned for internation business and new prompts should be desined for all other events.
+        const systemPrompt = `You are an expert FBLA Role Play scenario designer for the International Business competitive event. Your task is to generate a realistic case study that mirrors the structure and complexity of an official National Leadership Conference (NLC) prompt.
 
-INSTRUCTIONS:
-1. Create a realistic business scenario that matches the event and sounds like an official FBLA prompt.
-2. The company is a USA-based ${diversityElements.companyType} that is expanding internationally.
-3. Present the company with 3 country expansion options: ${diversityElements.countryOptions.join(', ')}.
-4. Instruct the competitor to select ONE of these three countries that makes the most strategic sense for this company type to expand into and justify their choice.
-5. Include concrete details (company size, constraints, stakeholders, a few data points) but keep it solvable.
-6. STRUCTURE: You must output headers exactly as: **Background Information**, **Scenario**, **Country Options for Expansion**, **Other Useful Information**, **Requirements**.
-7. In the **Country Options for Expansion** section, list the three countries and ask the student to choose one.
-8. LENGTH: Aim for ~${SCENARIO_TARGET_WORDS} words (complete, not overly long).
-9. REQUIREMENTS: Provide exactly 3 bullet points in the Requirements section that the student must address (including justifying their country choice).
-10. Make the scenario self-contained: include any needed numbers, dates, and constraints in the prompt.`;
+### DYNAMIC INPUTS
+- **Company Type:** ${diversityElements.companyType}
+- **Country Options (Internal Use Only):** ${diversityElements.countryOptions.join(', ')}
+- **Target Word Count:** ~${SCENARIO_TARGET_WORDS} words
 
-        const userPrompt = `Create a NEW scenario. Do not copy the examples.
+### CORE INSTRUCTIONS
+1. **The Selection:** You must internally analyze the provided country options and pick the ONE that is the most logical and strategic fit for the ${diversityElements.companyType}. 
+2. **The "Done Deal" Mandate:** Do NOT ask the student to choose a country. The scenario must be written as if the Board of Directors has already selected the country you chose. The student’s job is to execute the expansion.
+3. **Tone & Persona:** Write in a formal, corporate tone. Define the student’s role (e.g., International Development Manager) and the judge’s role (e.g., CEO or Regional VP).
+4. **FBLA Realism:** Include 2-3 specific data points (e.g., "The local inflation rate is 3.5%," or "A 10% tariff applies to our category"). Focus on realistic "friction points" like cultural etiquette, trade barriers, or legal regulations.
 
-    Event overview (if present):
-    ${appState.eventOverview || '(No overview provided)'}
+### STRUCTURE (MUST follow this exactly)
+**PARTICIPANT INSTRUCTIONS**
+(Include standard FBLA timing: 20 minutes to review, 7 minutes for the interactive presentation, and notes that judges will ask questions throughout.)
 
-    Reference Examples:
-${selectedExamples.map((ex, i) => `--- EX ${i + 1} ---\n${ex.substring(0, 150)}...`).join('\n')}
+**PERFORMANCE INDICATORS**
+(Select 3-4 relevant indicators such as: "Explain the impact of geography on international business," "Identify risks and rewards of a foreign market," or "Illustrate how cultural factors influence consumer behavior.")
 
-Generate the scenario now. The company is a USA-based ${diversityElements.companyType}. 
+**BACKGROUND INFORMATION**
+(Provide a brief history of the U.S.-based ${diversityElements.companyType} and its domestic success.)
+
+**SCENARIO**
+(Clearly state that the company is expanding into [Your Chosen Country]. Describe the specific challenge—such as a cultural misunderstanding, a supply chain hurdle, or a branding conflict—that the student must solve.)
+
+**OTHER USEFUL INFORMATION**
+(Include 3-4 bulleted "facts" or constraints, such as budget limits, upcoming local holidays, or specific trade agreement benefits like USMCA or EU regulations.)
+
+**OBJECTIVES / REQUIREMENTS**
+(Provide exactly 3 bullet points that the student must address during their 7-minute presentation. These should focus on justifying the strategy for the *chosen* country and mitigating specific risks.)
+
+### FINAL GUARDRAIL
+Do not include any AI "chatter." Start your response directly with the **PARTICIPANT INSTRUCTIONS** header.`;
+
+        const exampleBlocks = selectedExamples.map((ex, i) => {
+            const trimmed = (ex || '').trim();
+            const excerpt = trimmed.length > SCENARIO_EXAMPLE_CHAR_LIMIT
+                ? `${trimmed.slice(0, SCENARIO_EXAMPLE_CHAR_LIMIT)}\n...[truncated]`
+                : trimmed;
+            return `--- EXAMPLE ${i + 1} (excerpt, up to ${SCENARIO_EXAMPLE_CHAR_LIMIT} chars) ---\n${excerpt}`;
+        });
+
+        const userPrompt = `Create a NEW scenario. Do not copy any text from the examples.
+
+Event overview (if present):
+${appState.eventOverview || '(No overview provided)'}
+
+Reference Examples (for STYLE + FORMAT only; do not copy):
+${exampleBlocks.join('\n\n')}
+
+Generate the scenario now. The company is a USA-based ${diversityElements.companyType}.
 
 Present these three countries as expansion options: ${diversityElements.countryOptions.join(', ')}
 
@@ -848,14 +886,18 @@ Instruct the student to choose ONE country that makes the most strategic sense f
             baseCountry: diversityElements.baseCountry,
             countryOptions: diversityElements.countryOptions,
             companyType: diversityElements.companyType,
-            examplesCount: selectedExamples.length
+            examplesCount: selectedExamples.length,
+            exampleCharLimit: SCENARIO_EXAMPLE_CHAR_LIMIT,
+            exampleCharsIncluded: exampleBlocks.reduce((sum, b) => sum + b.length, 0),
+            userPromptChars: userPrompt.length,
+            systemPromptChars: systemPrompt.length
         });
 
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
         ]);
-        
+
         logAICall('SCENARIO_GENERATION_SUCCESS', {
             responseLength: response?.length || 0,
             baseCountry: diversityElements.baseCountry,
@@ -865,7 +907,7 @@ Instruct the student to choose ONE country that makes the most strategic sense f
 
         clearInterval(progressInterval);
         progressBar.style.width = '100%';
-        
+
         // Removed the "trimScenario" function call which was chopping off the ends of valid scenarios
         appState.generatedScenario = response;
         appState.generatedScenarioContext = diversityElements; // Store for reference
@@ -877,17 +919,17 @@ Instruct the student to choose ONE country that makes the most strategic sense f
 
         // Small delay to let user see 100%
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
     } catch (error) {
         clearInterval(progressInterval);
         console.error('Scenario generation error:', error);
-        
+
         logAICall('SCENARIO_GENERATION_ERROR', {
             error: error.message,
             status: error.status,
             stack: error.stack?.substring(0, 200)
         });
-        
+
         throw error;
     }
 }
@@ -955,7 +997,7 @@ function showScreen(screenId) {
         'qa-screen',
         'judging-screen'
     ];
-    
+
     screens.forEach(id => {
         const screen = document.getElementById(id);
         if (screen) {
@@ -971,29 +1013,29 @@ function showScreen(screenId) {
 function displayScenario() {
     const container = document.getElementById('scenario-content');
     if (!container || !appState.generatedScenario) return;
-    
+
     // Parse markdown using marked library if available, otherwise fallback to simple replacement
     let htmlContent;
     if (typeof marked !== 'undefined') {
         htmlContent = marked.parse(appState.generatedScenario);
     } else {
         console.warn('Marked library not found, using fallback parser');
-         // Convert markdown-style formatting to HTML
+        // Convert markdown-style formatting to HTML
         htmlContent = appState.generatedScenario
-        .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-slate-800">$1</strong>')
-        .replace(/\n\n/g, '</p><p class="mb-4">')
-        .replace(/• /g, '<li class="ml-4 mb-1">')
-        .replace(/\n(?=<li)/g, '</li>')
-        .replace(/<\/li>(?![\s\S]*<li)/g, '</li></ul>')
-        .replace(/<li/g, (match, offset, str) => {
-            const before = str.substring(0, offset);
-            if (!before.includes('<ul') || before.lastIndexOf('</ul>') > before.lastIndexOf('<ul')) {
-                return '<ul class="list-disc mb-4">' + match;
-            }
-            return match;
-        });
+            .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-slate-800">$1</strong>')
+            .replace(/\n\n/g, '</p><p class="mb-4">')
+            .replace(/• /g, '<li class="ml-4 mb-1">')
+            .replace(/\n(?=<li)/g, '</li>')
+            .replace(/<\/li>(?![\s\S]*<li)/g, '</li></ul>')
+            .replace(/<li/g, (match, offset, str) => {
+                const before = str.substring(0, offset);
+                if (!before.includes('<ul') || before.lastIndexOf('</ul>') > before.lastIndexOf('<ul')) {
+                    return '<ul class="list-disc mb-4">' + match;
+                }
+                return match;
+            });
     }
-    
+
     container.innerHTML = `<div class="prose prose-slate max-w-none dark:prose-invert">${htmlContent}</div>`;
 }
 
@@ -1017,15 +1059,15 @@ function startPlanningTimer() {
 
     appState.planningTimeLeft = PLANNING_TIME;
     updatePlanningTimerDisplay();
-    
+
     // Show session timer in header
     const sessionTimer = document.getElementById('session-timer');
     if (sessionTimer) sessionTimer.classList.remove('hidden');
-    
+
     appState.currentTimer = setInterval(() => {
         appState.planningTimeLeft--;
         updatePlanningTimerDisplay();
-        
+
         if (appState.planningTimeLeft <= 0) {
             clearInterval(appState.currentTimer);
             appState.currentTimer = null;
@@ -1038,13 +1080,13 @@ function updatePlanningTimerDisplay() {
     const minutes = Math.floor(appState.planningTimeLeft / 60);
     const seconds = appState.planningTimeLeft % 60;
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
+
     const planningTimer = document.getElementById('planning-timer');
     const sessionTimer = document.getElementById('session-timer');
-    
+
     if (planningTimer) planningTimer.textContent = timeStr;
     if (sessionTimer) sessionTimer.textContent = timeStr;
-    
+
     // Warning states
     if (appState.planningTimeLeft <= 60 && appState.planningTimeLeft > 0) {
         if (planningTimer) planningTimer.classList.add('text-amber-600');
@@ -1054,16 +1096,16 @@ function updatePlanningTimerDisplay() {
 function startPresentationTimer() {
     appState.presentationTimeLeft = PRESENTATION_TIME;
     updatePresentationTimerDisplay();
-    
+
     appState.currentTimer = setInterval(() => {
         appState.presentationTimeLeft--;
         updatePresentationTimerDisplay();
-        
+
         // 1-minute warning
         if (appState.presentationTimeLeft === PRESENTATION_WARNING) {
             showPresentationWarning();
         }
-        
+
         if (appState.presentationTimeLeft <= 0) {
             endMainPresentation();
         }
@@ -1074,13 +1116,13 @@ function updatePresentationTimerDisplay() {
     const minutes = Math.floor(appState.presentationTimeLeft / 60);
     const seconds = appState.presentationTimeLeft % 60;
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
+
     const recordingTimer = document.getElementById('recording-timer');
     const sessionTimer = document.getElementById('session-timer');
-    
+
     if (recordingTimer) recordingTimer.textContent = timeStr;
     if (sessionTimer) sessionTimer.textContent = timeStr;
-    
+
     // Warning states
     if (appState.presentationTimeLeft <= 60) {
         if (recordingTimer) {
@@ -1104,11 +1146,11 @@ function showPresentationWarning() {
 function startQATimer() {
     appState.qaTimeLeft = QA_TIME;
     updateQATimerDisplay();
-    
+
     appState.currentTimer = setInterval(() => {
         appState.qaTimeLeft--;
         updateQATimerDisplay();
-        
+
         if (appState.qaTimeLeft <= 0) {
             endQARecording();
         }
@@ -1119,13 +1161,13 @@ function updateQATimerDisplay() {
     const minutes = Math.floor(appState.qaTimeLeft / 60);
     const seconds = appState.qaTimeLeft % 60;
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
+
     const qaTimer = document.getElementById('qa-timer');
     const sessionTimer = document.getElementById('session-timer');
-    
+
     if (qaTimer) qaTimer.textContent = timeStr;
     if (sessionTimer) sessionTimer.textContent = timeStr;
-    
+
     // Warning when time is low
     if (appState.qaTimeLeft <= 15) {
         if (qaTimer) qaTimer.classList.add('timer-critical');
@@ -1139,17 +1181,17 @@ function initializeSpeechRecognition() {
         console.warn('Speech recognition not supported in this browser');
         return;
     }
-    
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     appState.recognition = new SpeechRecognition();
     appState.recognition.continuous = true;
     appState.recognition.interimResults = true;
     appState.recognition.lang = 'en-US';
-    
+
     appState.recognition.onresult = (event) => {
         let interimTranscript = '';
         let finalTranscript = '';
-        
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
@@ -1158,10 +1200,10 @@ function initializeSpeechRecognition() {
                 interimTranscript += transcript;
             }
         }
-        
+
         updateTranscript(finalTranscript, interimTranscript);
     };
-    
+
     appState.recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         if (event.error === 'no-speech') {
@@ -1171,7 +1213,7 @@ function initializeSpeechRecognition() {
             }
         }
     };
-    
+
     appState.recognition.onend = () => {
         // Restart if still supposed to be recording
         if (appState.isRecording) {
@@ -1258,7 +1300,7 @@ async function startAudioCapture(target) {
     appState.audioProcessingPromise = null;
     appState.recordingBackend = null;
     appState.audioChunks = [];
-    
+
     try {
         // Request mono audio at 16kHz sample rate for optimal file size (speech-optimized)
         const audioConstraints = {
@@ -1271,7 +1313,7 @@ async function startAudioCapture(target) {
             }
         };
         const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
-        
+
         // Keep the stream reference so we can stop tracks later.
         appState.audioStream = stream;
 
@@ -1437,11 +1479,11 @@ async function trimSilenceFromAudio(blob) {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const arrayBuffer = await blob.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
+
         const channelData = audioBuffer.getChannelData(0);
         const sampleRate = audioBuffer.sampleRate;
         const threshold = 0.01;
-        
+
         // Find start (skip silence at beginning)
         let startSample = 0;
         for (let i = 0; i < channelData.length; i++) {
@@ -1451,7 +1493,7 @@ async function trimSilenceFromAudio(blob) {
                 break;
             }
         }
-        
+
         // Find end (skip silence at end)
         let endSample = channelData.length;
         for (let i = channelData.length - 1; i >= startSample; i--) {
@@ -1461,7 +1503,7 @@ async function trimSilenceFromAudio(blob) {
                 break;
             }
         }
-        
+
         // If trimming would remove too much, return original
         const trimmedLength = endSample - startSample;
         if (trimmedLength < sampleRate * 0.5) { // Less than 0.5 seconds
@@ -1469,7 +1511,7 @@ async function trimSilenceFromAudio(blob) {
             audioContext.close();
             return blob;
         }
-        
+
         // Create trimmed buffer
         const trimmedBuffer = audioContext.createBuffer(
             1, // Mono
@@ -1477,12 +1519,12 @@ async function trimSilenceFromAudio(blob) {
             sampleRate
         );
         trimmedBuffer.copyToChannel(channelData.slice(startSample, endSample), 0);
-        
+
         // Convert back to blob
         const trimmedBlob = await audioBufferToBlob(trimmedBuffer, blob.type || 'audio/mpeg');
-        
-        console.log(`Trimmed audio: ${blob.size} -> ${trimmedBlob.size} bytes (${Math.round((1 - trimmedBlob.size/blob.size) * 100)}% reduction)`);
-        
+
+        console.log(`Trimmed audio: ${blob.size} -> ${trimmedBlob.size} bytes (${Math.round((1 - trimmedBlob.size / blob.size) * 100)}% reduction)`);
+
         audioContext.close();
         return trimmedBlob;
     } catch (error) {
@@ -1498,18 +1540,18 @@ async function audioBufferToBlob(audioBuffer, originalMimeType) {
     const numChannels = audioBuffer.numberOfChannels;
     const sampleRate = audioBuffer.sampleRate;
     const length = audioBuffer.length;
-    
+
     // Create WAV file
     const wavBuffer = new ArrayBuffer(44 + length * 2);
     const view = new DataView(wavBuffer);
-    
+
     // WAV header
     const writeString = (offset, string) => {
         for (let i = 0; i < string.length; i++) {
             view.setUint8(offset + i, string.charCodeAt(i));
         }
     };
-    
+
     writeString(0, 'RIFF');
     view.setUint32(4, 36 + length * 2, true);
     writeString(8, 'WAVE');
@@ -1523,7 +1565,7 @@ async function audioBufferToBlob(audioBuffer, originalMimeType) {
     view.setUint16(34, 16, true);
     writeString(36, 'data');
     view.setUint32(40, length * 2, true);
-    
+
     // Audio data
     const channelData = audioBuffer.getChannelData(0);
     let offset = 44;
@@ -1532,7 +1574,7 @@ async function audioBufferToBlob(audioBuffer, originalMimeType) {
         view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
         offset += 2;
     }
-    
+
     return new Blob([wavBuffer], { type: 'audio/wav' });
 }
 
@@ -1545,19 +1587,19 @@ async function audioBufferToBlob(audioBuffer, originalMimeType) {
  */
 async function processAudioForUpload(blob, target) {
     if (!blob || blob.size === 0) return blob;
-    
+
     console.log(`Processing ${target} audio: ${Math.round(blob.size / 1024)} KB`);
-    
+
     // Step 1: Trim silence from beginning and end
     let processedBlob = await trimSilenceFromAudio(blob);
-    
+
     // Step 2: For very long recordings (>3 min at ~64kbps = ~1.5MB), consider chunking
     // But for now, just warn - chunking would require server-side reassembly
     const MAX_SIZE_BYTES = 3 * 1024 * 1024; // 3MB limit
     if (processedBlob.size > MAX_SIZE_BYTES) {
         console.warn(`Audio file is large (${Math.round(processedBlob.size / 1024 / 1024)}MB). Consider shorter recordings.`);
     }
-    
+
     return processedBlob;
 }
 
@@ -1635,34 +1677,48 @@ async function transcribeAudioInChunks(blob, label = 'audio') {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
     const chunks = splitAudioBufferWithOverlap(audioBuffer, audioContext, 60000, 2000);
-    let combined = '';
+    const systemPrompt = `You are a precise transcription engine. Return ONLY the spoken words as plain text. Do not add labels or punctuation if not spoken.`;
 
-    for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const chunkBlob = await audioBufferToBlob(chunk.buffer, 'audio/wav');
-        const chunkBase64 = await blobToBase64(chunkBlob);
+    const results = new Array(chunks.length).fill('');
+    const concurrency = Math.max(1, Number(TRANSCRIBE_CONCURRENCY) || 1);
+    const queue = chunks.map((_, idx) => idx);
 
-        const systemPrompt = `You are a precise transcription engine. Return ONLY the spoken words as plain text. Do not add labels or punctuation if not spoken.`;
-        const userPrompt = `Transcribe this ${label} chunk ${i + 1} of ${chunks.length}. If this chunk overlaps with the previous one, avoid repeating any words you already said at the start.`;
+    const worker = async () => {
+        while (queue.length > 0) {
+            const i = queue.shift();
+            const chunk = chunks[i];
+            const chunkBlob = await audioBufferToBlob(chunk.buffer, 'audio/wav');
+            const chunkBase64 = await blobToBase64(chunkBlob);
 
-        const response = await callAI([
-            { role: 'system', content: systemPrompt },
-            {
-                role: 'user',
-                content: [
-                    { type: 'text', text: userPrompt },
-                    {
-                        type: 'input_audio',
-                        input_audio: {
-                            data: chunkBase64,
-                            format: 'wav'
+            const userPrompt = `Transcribe this ${label} chunk ${i + 1} of ${chunks.length}. If this chunk overlaps with the previous one, avoid repeating any words you already said at the start.`;
+
+            const response = await callAI([
+                { role: 'system', content: systemPrompt },
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: userPrompt },
+                        {
+                            type: 'input_audio',
+                            input_audio: {
+                                data: chunkBase64,
+                                format: 'wav'
+                            }
                         }
-                    }
-                ]
-            }
-        ], false);
+                    ]
+                }
+            ], false);
 
-        combined = mergeChunkTranscript(combined, response);
+            results[i] = response || '';
+        }
+    };
+
+    // Transcribe chunks concurrently, then stitch in order.
+    await Promise.all(new Array(concurrency).fill(null).map(() => worker()));
+
+    let combined = '';
+    for (let i = 0; i < results.length; i++) {
+        combined = mergeChunkTranscript(combined, results[i]);
     }
 
     audioContext.close();
@@ -1719,25 +1775,26 @@ async function prepareTranscriptsForJudging() {
 /**
  * Prepare content for judge evaluation with audio priority and fallback to transcripts
  */
-function prepareJudgeContent() {
+function prepareJudgeContent(options = {}) {
+    const preferTranscript = options.preferTranscript ?? JUDGING_PREFER_TRANSCRIPT;
     const mainAudioPayload = getAudioPayload('main');
     const qaAudioPayload = getAudioPayload('qa');
-    
+
     const mainTranscriptText = (appState.mainTranscript || '').trim();
     const qaTranscriptText = (appState.qaTranscript || '').trim();
-    
+
     console.log('[AUDIO-SOURCE-CHECK] Main audio sources:');
     console.log('  - appState.mainAudioBlob exists:', !!appState.mainAudioBlob, appState.mainAudioBlob?.size || 0, 'bytes');
     console.log('  - appState.mainAudioBase64 exists:', !!appState.mainAudioBase64, appState.mainAudioBase64?.length || 0, 'chars');
     console.log('  - appState.mainAudioMimeType:', appState.mainAudioMimeType);
     console.log('  - mainTranscript exists:', !!mainTranscriptText, 'length:', mainTranscriptText.length);
-    
+
     console.log('[AUDIO-SOURCE-CHECK] Q&A audio sources:');
     console.log('  - appState.qaAudioBlob exists:', !!appState.qaAudioBlob, appState.qaAudioBlob?.size || 0, 'bytes');
     console.log('  - appState.qaAudioBase64 exists:', !!appState.qaAudioBase64, appState.qaAudioBase64?.length || 0, 'chars');
     console.log('  - appState.qaAudioMimeType:', appState.qaAudioMimeType);
     console.log('  - qaTranscript exists:', !!qaTranscriptText, 'length:', qaTranscriptText.length);
-    
+
     console.log('[AUDIO-DEBUG] Preparing judge content:', {
         hasMainAudio: !!mainAudioPayload,
         mainAudioSize: mainAudioPayload?.data?.length || 0,
@@ -1752,13 +1809,13 @@ function prepareJudgeContent() {
     });
 
     const content = {
-        mainAudio: mainAudioPayload,
-        qaAudio: qaAudioPayload,
+        mainAudio: preferTranscript ? null : mainAudioPayload,
+        qaAudio: preferTranscript ? null : qaAudioPayload,
         mainTranscript: mainTranscriptText,
         qaTranscript: qaTranscriptText,
         usageMethod: {
-            main: mainAudioPayload ? 'AUDIO (with fallback to STT)' : 'STT_TRANSCRIPT_ONLY',
-            qa: qaAudioPayload ? 'AUDIO (with fallback to STT)' : 'STT_TRANSCRIPT_ONLY'
+            main: (preferTranscript || !mainAudioPayload) ? 'STT_TRANSCRIPT_ONLY' : 'AUDIO (with fallback to STT)',
+            qa: (preferTranscript || !qaAudioPayload) ? 'STT_TRANSCRIPT_ONLY' : 'AUDIO (with fallback to STT)'
         }
     };
 
@@ -1783,9 +1840,9 @@ function getAudioPayload(target) {
     }
     if (target === 'qa' && appState.qaAudioBase64) {
         return {
-             mimeType: appState.qaAudioMimeType || 'audio/mpeg',
-             format: getAudioFormatFromMime(appState.qaAudioMimeType || 'audio/mpeg'),
-             data: appState.qaAudioBase64
+            mimeType: appState.qaAudioMimeType || 'audio/mpeg',
+            format: getAudioFormatFromMime(appState.qaAudioMimeType || 'audio/mpeg'),
+            data: appState.qaAudioBase64
         };
     }
     return null;
@@ -1794,7 +1851,7 @@ function getAudioPayload(target) {
 function updateTranscript(finalText, interimText) {
     const target = appState.recordingTarget;
     const container = document.getElementById(target === 'main' ? 'main-transcript' : 'qa-transcript');
-    
+
     if (container) {
         if (target === 'main') {
             if (finalText) appState.mainTranscript += finalText;
@@ -1835,25 +1892,25 @@ function updateTranscript(finalText, interimText) {
 function startPresentation() {
     // Stop planning timer
     clearInterval(appState.currentTimer);
-    
+
     // Save notes
     const noteInput = document.getElementById('note-card-input');
     if (noteInput) {
         appState.notes = noteInput.value;
     }
-    
+
     // Show recording screen
     showScreen('recording-screen');
-    
+
     // Display notes (read-only)
     const notesDisplay = document.getElementById('notes-display');
     if (notesDisplay) {
         notesDisplay.textContent = appState.notes || 'No notes taken.';
     }
-    
+
     // Reset transcript
     appState.mainTranscript = "";
-    
+
     // Start recording and timer
     startRecording('main');
     startPresentationTimer();
@@ -1862,7 +1919,7 @@ function startPresentation() {
 function endMainPresentation() {
     clearInterval(appState.currentTimer);
     stopRecording();
-    
+
     // If Q&A timing is set to "after", generate questions now
     if (appState.qaTiming === 'after') {
         generateQAQuestions();
@@ -1911,7 +1968,7 @@ ${appState.generatedScenario}
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
         ], true, { jsonType: 'array' });
-        
+
         // Parse questions
         let questions;
         try {
@@ -1939,7 +1996,7 @@ ${appState.generatedScenario}
                 });
             }
         }
-        
+
         appState.qaQuestions = questions;
         console.log('Generated Q&A questions:', appState.qaQuestions);
         logScenarioGeneration('QA_QUESTIONS_GENERATED', {
@@ -1949,7 +2006,7 @@ ${appState.generatedScenario}
         });
         // Display questions immediately so they're ready when Q&A screen shows
         displayQAQuestions();
-        
+
     } catch (error) {
         console.error('Error generating pre-presentation Q&A questions:', error);
         logAICall('QA_GENERATION_ERROR', {
@@ -1973,7 +2030,7 @@ ${appState.generatedScenario}
 
 async function generateQAQuestions() {
     showScreen('qa-screen');
-    
+
     // Show loading state
     const questionsList = document.getElementById('questions-list');
     if (questionsList) {
@@ -1989,7 +2046,7 @@ async function generateQAQuestions() {
     if (appState.audioProcessingPromise) {
         await appState.audioProcessingPromise;
     }
-    
+
     try {
         // Polished prompt logic
         const systemPrompt = `You are an expert FBLA competition judge. Your goal is to ask insightful, probing follow-up questions based on the student's presentation.
@@ -2012,7 +2069,7 @@ Example: ["Question 1?", "Question 2?"]`;
 
         await prepareTranscriptsForJudging();
         const transcript = (appState.mainTranscript || '').trim();
-        
+
         const content = [
             { type: "text", text: `SCENARIO:\n${appState.generatedScenario}\n\nSTUDENT PRESENTATION (TRANSCRIPT):\n${transcript || '(No transcript captured)'}\n\nGenerate 2 follow-up questions that reference what they said (tradeoffs, risks, implementation details).` }
         ];
@@ -2021,7 +2078,7 @@ Example: ["Question 1?", "Question 2?"]`;
             { role: "system", content: systemPrompt },
             { role: "user", content: content }
         ], true, { jsonType: 'array' });
-        
+
         // Parse questions
         let questions;
         try {
@@ -2037,11 +2094,11 @@ Example: ["Question 1?", "Question 2?"]`;
                 ];
             }
         }
-        
+
         appState.qaQuestions = questions;
         displayQAQuestions();
         startQAReadDelay();
-        
+
     } catch (error) {
         console.error('Error generating Q&A questions:', error);
         appState.qaQuestions = [
@@ -2056,7 +2113,7 @@ Example: ["Question 1?", "Question 2?"]`;
 function displayQAQuestions() {
     const questionsList = document.getElementById('questions-list');
     if (!questionsList) return;
-    
+
     questionsList.innerHTML = appState.qaQuestions.map((q, i) => `
         <div class="flex items-start gap-3">
             <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-sm font-bold">${i + 1}</span>
@@ -2068,11 +2125,11 @@ function displayQAQuestions() {
 function startQAReadDelay() {
     let countdown = QA_READ_DELAY;
     const countdownDisplay = document.getElementById('read-countdown');
-    
+
     const interval = setInterval(() => {
         countdown--;
         if (countdownDisplay) countdownDisplay.textContent = countdown;
-        
+
         if (countdown <= 0) {
             clearInterval(interval);
             startQARecording();
@@ -2084,13 +2141,13 @@ function startQARecording() {
     // Hide delay message, show recording section
     const delaySection = document.getElementById('qa-read-delay');
     const recordingSection = document.getElementById('qa-recording-section');
-    
+
     if (delaySection) delaySection.classList.add('hidden');
     if (recordingSection) recordingSection.classList.remove('hidden');
-    
+
     // Reset Q&A transcript
     appState.qaTranscript = "";
-    
+
     // Start recording and timer
     startRecording('qa');
     startQATimer();
@@ -2107,7 +2164,7 @@ async function endQARecording() {
             console.warn('Audio processing failed:', error);
         }
     }
-    
+
     // Move to judging
     startJudging();
 }
@@ -2116,14 +2173,14 @@ async function endQARecording() {
 
 async function startJudging() {
     showScreen('judging-screen');
-    
+
     // Show loading state
     const loadingSection = document.getElementById('judging-loading');
     const resultsSection = document.getElementById('judging-results');
-    
+
     if (loadingSection) loadingSection.classList.remove('hidden');
     if (resultsSection) resultsSection.classList.add('hidden');
-    
+
     appState.judgeResults = [];
 
     console.log('[JUDGING] Starting judge evaluation process...');
@@ -2131,24 +2188,27 @@ async function startJudging() {
     // Prepare chunked transcripts before judging to avoid audio size limits
     await prepareTranscriptsForJudging();
 
-    // Prepare judge content with audio priority
-    const judgeContent = prepareJudgeContent();
+    // Prepare judge content (transcript-first for speed; audio is large)
+    const judgeContent = prepareJudgeContent({ preferTranscript: JUDGING_PREFER_TRANSCRIPT });
     appState.judgeContent = judgeContent; // Store for debugging
-    
+
     console.log('[JUDGING] Judge content prepared, starting evaluations:', {
         mainContentSource: judgeContent.usageMethod.main,
         qaContentSource: judgeContent.usageMethod.qa,
         audioAvailable: !!judgeContent.mainAudio || !!judgeContent.qaAudio
     });
-    
-    // Run all three judges in parallel
-    const judgePromises = appState.selectedJudges.map((judge, index) => 
-        runJudgeEvaluation(judge, index, judgeContent)
-    );
-    
+
     try {
-        await Promise.all(judgePromises);
-        
+        if (JUDGING_MODE === 'panel') {
+            await runPanelJudging(judgeContent);
+        } else {
+            // Run all three judges in parallel (legacy)
+            const judgePromises = appState.selectedJudges.map((judge, index) =>
+                runJudgeEvaluation(judge, index, judgeContent)
+            );
+            await Promise.all(judgePromises);
+        }
+
         // Log final summary of what was used for each judge
         console.log(`[AUDIO-TRANSMISSION-SUMMARY] All judges completed:`);
         console.log(`[AUDIO-TRANSMISSION-SUMMARY] Main presentation from: ${judgeContent.mainAudio ? 'AUDIO FILE' : 'STT TRANSCRIPT'}`);
@@ -2159,7 +2219,7 @@ async function startJudging() {
         if (judgeContent.qaAudio) {
             console.log(`[AUDIO-TRANSMISSION-SUMMARY] Q&A audio size: ${(judgeContent.qaAudio.data.length / 1024).toFixed(1)} KB (${judgeContent.qaAudio.format})`);
         }
-        
+
         displayJudgingResults();
     } catch (error) {
         console.error('Error during judging:', error);
@@ -2173,16 +2233,145 @@ async function startJudging() {
     }
 }
 
+async function runPanelJudging(judgeContent) {
+    const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
+    const judges = appState.selectedJudges || [];
+
+    logAICall('JUDGE_PANEL_START', {
+        judges: judges.map(j => ({ name: j.name, title: j.title })),
+        mode: 'panel',
+        contentMethod: {
+            main: judgeContent?.usageMethod?.main,
+            qa: judgeContent?.usageMethod?.qa
+        },
+        transcriptSizes: {
+            main: judgeContent?.mainTranscript?.length || 0,
+            qa: judgeContent?.qaTranscript?.length || 0
+        }
+    });
+
+    // Optimistic progress UI
+    judges.forEach((_, index) => {
+        if (judgeProgressItems[index]) {
+            judgeProgressItems[index].innerHTML = `
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span class="text-sm font-medium text-blue-600">Judge ${index + 1}</span>
+            `;
+        }
+    });
+
+    const systemPrompt = `You are an FBLA role play judging panel (3 judges) evaluating the student's performance.
+
+CRITICAL INSTRUCTIONS:
+1. Evaluate ONLY what the student actually said in the transcripts provided.
+2. Do NOT invent or assume content.
+3. Be fair but honest.
+
+RUBRIC (Max 100):
+- Understanding (10)
+- Alternatives (20)
+- Solution (20)
+- Knowledge (20)
+- Organization (10)
+- Delivery (10)
+- Questions (10)
+
+OUTPUT STRICT JSON OBJECT ONLY:
+{
+  "judges": [
+    {
+      "judgeIndex": 0,
+      "judgeName": "...",
+      "judgeTitle": "...",
+      "scores": { "understanding": 0, "alternatives": 0, "solution": 0, "knowledge": 0, "organization": 0, "delivery": 0, "questions": 0 },
+      "total": 0,
+      "categoryFeedback": { "understanding": "...", "alternatives": "...", "solution": "...", "knowledge": "...", "organization": "...", "delivery": "...", "questions": "..." },
+      "overallFeedback": "...",
+      "strengthHighlight": "...",
+      "improvementArea": "...",
+      "personalizedFeedback": "...",
+      "actionableTips": ["...", "..."]
+    }
+  ]
+}`;
+
+    const userText = `SCENARIO:\n${appState.generatedScenario}\n\nQ&A QUESTIONS ASKED:\n${appState.qaQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\n\nSTUDENT MAIN PRESENTATION (TRANSCRIPT):\n${judgeContent?.mainTranscript || '(No transcript captured)'}\n\nSTUDENT Q&A RESPONSE (TRANSCRIPT):\n${judgeContent?.qaTranscript || '(No transcript captured)'}\n\nJUDGES:\n${judges.map((j, i) => `${i}. ${j.name} — ${j.title}`).join('\n')}\n\nReturn one evaluation per judge (same rubric), keeping each judge's tone slightly distinct (analytical, ROI-driven, cultural, legal, etc.) based on their title/name, but do not change scoring fairness.`;
+
+    let panelResult;
+    try {
+        const response = await callAI([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userText }
+        ], true);
+
+        panelResult = JSON.parse(response);
+    } catch (error) {
+        logAICall('JUDGE_PANEL_ERROR', { error: error.message });
+        // Fallback to legacy parallel judging if panel output fails.
+        const judgePromises = judges.map((judge, index) =>
+            runJudgeEvaluation(judge, index, judgeContent)
+        );
+        await Promise.all(judgePromises);
+        return;
+    }
+
+    const judgeEvaluations = Array.isArray(panelResult?.judges) ? panelResult.judges : [];
+
+    // Map returned evaluations back onto selected judges by index.
+    judges.forEach((judge, index) => {
+        const found = judgeEvaluations.find(j => Number(j.judgeIndex) === index) || judgeEvaluations[index];
+        const evaluation = found || null;
+
+        if (!evaluation) {
+            appState.judgeResults[index] = {
+                judge,
+                error: true,
+                errorDetails: { message: 'Panel judging returned no evaluation for this judge.' },
+                evaluation: {
+                    scores: { understanding: 5, alternatives: 5, solution: 5, knowledge: 5, organization: 5, delivery: 5, questions: 5 },
+                    total: 35,
+                    categoryFeedback: { understanding: "Missing panel evaluation.", alternatives: "Missing panel evaluation.", solution: "Missing panel evaluation.", knowledge: "Missing panel evaluation.", organization: "Missing panel evaluation.", delivery: "Missing panel evaluation.", questions: "Missing panel evaluation." },
+                    overallFeedback: "Panel judging failed to return this evaluation.",
+                    strengthHighlight: "N/A",
+                    improvementArea: "N/A",
+                    personalizedFeedback: "N/A",
+                    actionableTips: ["Try again"]
+                }
+            };
+        } else {
+            // Ensure total exists
+            if (!evaluation.total && evaluation.scores) {
+                evaluation.total = Object.values(evaluation.scores).reduce((a, b) => a + b, 0);
+            }
+            appState.judgeResults[index] = { judge, evaluation };
+        }
+
+        if (judgeProgressItems[index]) {
+            judgeProgressItems[index].innerHTML = `
+                <svg class="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span class="text-sm text-green-600">Judge ${index + 1}</span>
+            `;
+        }
+    });
+
+    logAICall('JUDGE_PANEL_SUCCESS', {
+        judgesReturned: judgeEvaluations.length,
+        scores: appState.judgeResults.map(r => r?.evaluation?.total).filter(v => typeof v === 'number')
+    });
+}
+
 async function runJudgeEvaluation(judge, index, judgeContent) {
     const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
-    
+
     logAICall('JUDGE_EVALUATION_START', {
         judgeIndex: index,
         judgeName: judge.name,
         judgeTitle: judge.title,
         totalJudges: appState.selectedJudges.length
     });
-    
+
     try {
         // Use prepared judge content or prepare now
         if (!judgeContent) {
@@ -2193,7 +2382,7 @@ async function runJudgeEvaluation(judge, index, judgeContent) {
         const qaAudio = judgeContent.qaAudio;
         const mainTranscriptText = judgeContent.mainTranscript;
         const qaTranscriptText = judgeContent.qaTranscript;
-        
+
         console.log(`[JUDGE-${index + 1}] Evaluating with ${judge.name}:`, {
             mainContentMethod: judgeContent.usageMethod.main,
             mainContentSize: mainAudio ? mainAudio.data.length : mainTranscriptText.length,
@@ -2212,7 +2401,7 @@ async function runJudgeEvaluation(judge, index, judgeContent) {
             qaAudioSizeKB: (qaAudio?.data?.length / 1024).toFixed(2),
             qaTranscriptLength: qaTranscriptText.length
         });
-        
+
         const judgeVoices = {
             'Dr. Margaret Chen': 'You are analytical and theory-focused.',
             'Marcus Williams': 'You are ROI-driven and direct.',
@@ -2225,9 +2414,9 @@ async function runJudgeEvaluation(judge, index, judgeContent) {
             'Dr. Aisha Patel': 'You focus on brand strategy.',
             'Michael Chang': 'You focus on scalability and profit.'
         };
-        
+
         const judgeVoice = judgeVoices[judge.name] || 'You give balanced, constructive feedback.';
-        
+
         const systemPrompt = `You are ${judge.name}, ${judge.title}. 
 PERSONALITY: ${judgeVoice}
 TASK: Judge an FBLA role play based on ONLY the presentation and Q&A responses provided.
@@ -2355,9 +2544,9 @@ RETURN VALID JSON ONLY.`
                 if (part.type === 'text') {
                     return { index: i, type: 'text', length: part.text.length };
                 } else if (part.input_audio) {
-                    return { 
-                        index: i, 
-                        type: 'input_audio', 
+                    return {
+                        index: i,
+                        type: 'input_audio',
                         format: part.input_audio.format,
                         sizeKB: (part.input_audio.data?.length / 1024).toFixed(2)
                     };
@@ -2370,7 +2559,7 @@ RETURN VALID JSON ONLY.`
         console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} Main content from: ${mainAudio ? 'ACTUAL AUDIO FILE' : 'STT TRANSCRIPT'}`);
         console.log(`[AUDIO-TRANSMISSION-DEBUG] Judge-${index + 1} Q&A content from: ${qaAudio ? 'ACTUAL AUDIO FILE' : 'STT TRANSCRIPT'}`);
         console.log(`[JUDGE-${index + 1}] Sending evaluation request to AI...`);
-        
+
         const response = await callAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: userContent }
@@ -2386,7 +2575,7 @@ RETURN VALID JSON ONLY.`
         if (!evaluation.total) {
             evaluation.total = Object.values(evaluation.scores).reduce((a, b) => a + b, 0);
         }
-        
+
         logAICall('JUDGE_EVALUATION_SUCCESS', {
             judgeIndex: index,
             judgeName: judge.name,
@@ -2400,12 +2589,12 @@ RETURN VALID JSON ONLY.`
             scores: evaluation.scores,
             overallFeedback: evaluation.overallFeedback
         });
-        
+
         appState.judgeResults[index] = {
             judge: judge,
             evaluation: evaluation
         };
-        
+
         // Update progress indicator
         if (judgeProgressItems[index]) {
             judgeProgressItems[index].innerHTML = `
@@ -2417,14 +2606,14 @@ RETURN VALID JSON ONLY.`
         }
     } catch (error) {
         console.error(`Error with judge ${index + 1}:`, error);
-        
+
         logAICall('JUDGE_EVALUATION_ERROR', {
             judgeIndex: index,
             judgeName: judge.name,
             error: error.message,
             status: error.status
         });
-        
+
         // Create fallback evaluation
         appState.judgeResults[index] = {
             judge: judge,
@@ -2466,7 +2655,7 @@ RETURN VALID JSON ONLY.`
             },
             error: true
         };
-        
+
         if (judgeProgressItems[index]) {
             judgeProgressItems[index].innerHTML = `
                 <svg class="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2480,7 +2669,7 @@ RETURN VALID JSON ONLY.`
 }
 
 // Helper functions for retry and error handling
-window.retryJudge = async function(index) {
+window.retryJudge = async function (index) {
     const judge = appState.selectedJudges[index];
     if (!judge) return;
 
@@ -2490,7 +2679,7 @@ window.retryJudge = async function(index) {
         const originalText = retryBtn.textContent;
         retryBtn.textContent = "Retrying...";
         retryBtn.disabled = true;
-        
+
         // Also show loading in the progress indicator
         const judgeProgressItems = document.querySelectorAll('#judge-progress > div');
         if (judgeProgressItems[index]) {
@@ -2503,51 +2692,51 @@ window.retryJudge = async function(index) {
 
     // Force run the judge evaluation again
     await runJudgeEvaluation(judge, index);
-    
+
     // Refresh the display with new results
     displayJudgingResults();
 };
 
-window.copyErrorCode = function(index) {
-     const result = appState.judgeResults[index];
-     if (result && result.errorDetails) {
-         // Create a formatted string of the error details
-         const errorInfo = {
-             message: result.errorDetails.message,
-             params: result.errorDetails.params,
-             stack: result.errorDetails.stack,
-             timestamp: new Date().toISOString()
-         };
-         
-         const text = JSON.stringify(errorInfo, null, 2);
-         
-         navigator.clipboard.writeText(text).then(() => {
-             const btn = document.getElementById(`copy-error-btn-${index}`);
-             if (btn) {
-                 const originalText = btn.textContent;
-                 btn.textContent = "Copied!";
-                 setTimeout(() => {
-                     btn.textContent = originalText;
-                 }, 2000);
-             }
-         }).catch(err => {
-             console.error('Failed to copy API error:', err);
-             alert('Failed to copy code. Check console for details.');
-         });
-     }
+window.copyErrorCode = function (index) {
+    const result = appState.judgeResults[index];
+    if (result && result.errorDetails) {
+        // Create a formatted string of the error details
+        const errorInfo = {
+            message: result.errorDetails.message,
+            params: result.errorDetails.params,
+            stack: result.errorDetails.stack,
+            timestamp: new Date().toISOString()
+        };
+
+        const text = JSON.stringify(errorInfo, null, 2);
+
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.getElementById(`copy-error-btn-${index}`);
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.textContent = "Copied!";
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy API error:', err);
+            alert('Failed to copy code. Check console for details.');
+        });
+    }
 };
 
 
 function displayJudgingResults() {
     const loadingSection = document.getElementById('judging-loading');
     const resultsSection = document.getElementById('judging-results');
-    
+
     if (loadingSection) loadingSection.classList.add('hidden');
     if (resultsSection) resultsSection.classList.remove('hidden');
-    
+
     // Calculate total score (average only from successful results for robustness)
     const successResults = appState.judgeResults.filter(r => r && r.evaluation && !r.error);
-    const totalScore = successResults.length > 0 
+    const totalScore = successResults.length > 0
         ? Math.round(successResults.reduce((sum, r) => sum + (r.evaluation.total || 0), 0) / successResults.length)
         : 0;
 
@@ -2570,15 +2759,15 @@ function displayJudgingResults() {
             scoreNote.remove();
         }
     }
-    
+
     // Save roleplay report to backend
     saveRoleplayReport(totalScore, appState.judgeResults);
-    
+
     // Render judge cards
     const judgeCardsContainer = document.getElementById('judge-cards');
     judgeCardsContainer.innerHTML = appState.judgeResults.map((result, i) => {
         const judge = result.judge;
-        
+
         // Error state card - Responsive design for mobile
         if (result.error) {
             return `
@@ -2624,7 +2813,7 @@ function displayJudgingResults() {
         const score = result.evaluation.total || 0;
         const scoreColor = score >= 70 ? 'text-green-600' : (score >= 50 ? 'text-amber-600' : 'text-red-600');
         const scoreBg = score >= 70 ? 'bg-green-50' : (score >= 50 ? 'bg-amber-50' : 'bg-red-50');
-        
+
         return `
             <div class="judge-card bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <div class="flex items-center gap-3 mb-4">
@@ -2663,7 +2852,7 @@ function displayJudgingResults() {
             </div>
         `;
     }).join('');
-    
+
     // Show first judge's scoresheet by default
     showJudgeSheet(0);
 }
@@ -2680,16 +2869,16 @@ function showJudgeSheet(index) {
             }
         }
     });
-    
+
     const result = appState.judgeResults[index];
     if (!result) return;
-    
+
     const evaluation = result.evaluation;
     const container = document.getElementById('scoresheet-content');
-    
+
     const scoreKeys = ['understanding', 'alternatives', 'solution', 'knowledge', 'organization', 'delivery', 'questions'];
     const maxScores = [10, 20, 20, 20, 10, 10, 10];
-    
+
     container.innerHTML = `
         <div class="mb-6">
             <h4 class="font-bold text-slate-800 mb-2">Overall Assessment</h4>
@@ -2712,13 +2901,13 @@ function showJudgeSheet(index) {
                 </thead>
                 <tbody>
                     ${FBLA_RUBRIC.categories.map((cat, i) => {
-                        const key = scoreKeys[i];
-                        const score = evaluation.scores?.[key] || 0;
-                        const maxScore = maxScores[i];
-                        const percentage = (score / maxScore) * 100;
-                        const barColor = percentage >= 70 ? 'bg-green-500' : (percentage >= 50 ? 'bg-amber-500' : 'bg-red-500');
-                        
-                        return `
+        const key = scoreKeys[i];
+        const score = evaluation.scores?.[key] || 0;
+        const maxScore = maxScores[i];
+        const percentage = (score / maxScore) * 100;
+        const barColor = percentage >= 70 ? 'bg-green-500' : (percentage >= 50 ? 'bg-amber-500' : 'bg-red-500');
+
+        return `
                             <tr class="rubric-row border-b border-slate-100">
                                 <td class="py-4 px-4">
                                     <div class="font-medium text-slate-800 text-sm">${cat.name}</div>
@@ -2732,7 +2921,7 @@ function showJudgeSheet(index) {
                                 <td class="py-4 px-4 text-sm text-slate-600">${escapeHtml(evaluation.categoryFeedback?.[key] || 'N/A')}</td>
                             </tr>
                         `;
-                    }).join('')}
+    }).join('')}
                 </tbody>
                 <tfoot>
                     <tr class="bg-slate-50">
@@ -2795,11 +2984,11 @@ function startNewSession() {
         generationStatusInterval: null,
         qaTiming: 'before'
     };
-    
+
     // Hide session timer
     const sessionTimer = document.getElementById('session-timer');
     if (sessionTimer) sessionTimer.classList.add('hidden');
-    
+
     // Return to event selection
     showScreen('event-selection-screen');
 }
@@ -2810,15 +2999,15 @@ async function callAI(messages, expectJson = false, options = {}) {
     const jsonType = options.jsonType || (expectJson ? 'object' : null);
     const callId = Math.random().toString(36).substring(7).toUpperCase();
     const requestTimestamp = new Date().toISOString();
-    
+
     const requestBody = {
         messages: messages,
-        temperature: expectJson ? 0.6 : 0.8, 
+        temperature: expectJson ? 0.6 : 0.8,
         model: AI_MODEL,
         // Only force strict JSON objects; arrays are better handled by prompt-only.
         response_format: (expectJson && jsonType === 'object') ? { type: "json_object" } : undefined
     };
-    
+
     // Log request details
     console.log(`[AI-CALL-${callId}] REQUEST START at ${requestTimestamp}`, {
         endpoint: AI_API_ENDPOINT,
@@ -2833,19 +3022,19 @@ async function callAI(messages, expectJson = false, options = {}) {
 
     // Log message content preview
     messages.forEach((msg, idx) => {
-        const contentPreview = typeof msg.content === 'string' 
+        const contentPreview = typeof msg.content === 'string'
             ? msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
             : 'non-string content';
         console.log(`[AI-CALL-${callId}] Message ${idx + 1}:`, { role: msg.role, contentLength: typeof msg.content === 'string' ? msg.content.length : 'N/A', preview: contentPreview });
     });
-    
+
     // Increased retries for robust roleplay experience
     const maxRetries = 6;
     let lastError;
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const attemptTimestamp = new Date().toISOString();
-        
+
         try {
             console.log(`[AI-CALL-${callId}] ATTEMPT ${attempt + 1}/${maxRetries + 1} at ${attemptTimestamp}`);
 
@@ -2881,30 +3070,30 @@ async function callAI(messages, expectJson = false, options = {}) {
                     continue;
                 }
             }
-            
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 const msg = errorData.message || errorData.error || response.statusText;
-                
+
                 console.error(`[AI-CALL-${callId}] ERROR Response (Status ${response.status}):`, {
                     message: msg,
                     fullError: errorData,
                     responseSize: response.headers.get('content-length')
                 });
-                
+
                 if (response.status === 401 || response.status === 403) {
                     throw new Error(`${msg || 'Authentication failed'} (Status ${response.status})`);
                 }
                 throw new Error(`API error (${response.status}): ${msg}`);
             }
-            
+
             const data = await response.json();
-            
+
             // Handle response format
             if (data.choices && data.choices[0]?.message?.content) {
                 const responseContent = data.choices[0].message.content;
                 const responseLength = typeof responseContent === 'string' ? responseContent.length : JSON.stringify(responseContent).length;
-                
+
                 console.log(`[AI-CALL-${callId}] SUCCESS - Response received`, {
                     contentLength: responseLength,
                     hasChoices: !!data.choices,
@@ -2924,10 +3113,10 @@ async function callAI(messages, expectJson = false, options = {}) {
 
                 return responseContent;
             }
-            
+
             console.error(`[AI-CALL-${callId}] Invalid response format:`, data);
             throw new Error('Invalid API response format');
-            
+
         } catch (error) {
             lastError = error;
             const errorTime = new Date().toISOString();
@@ -2943,7 +3132,7 @@ async function callAI(messages, expectJson = false, options = {}) {
                 error: error.message,
                 status: error.status
             });
-            
+
             if (attempt < maxRetries) {
                 // Exponential backoff before retry
                 const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
@@ -2952,7 +3141,7 @@ async function callAI(messages, expectJson = false, options = {}) {
             }
         }
     }
-    
+
     // All retries exhausted
     const failureTime = new Date().toISOString();
     console.error(`[AI-CALL-${callId}] ALL RETRIES EXHAUSTED at ${failureTime}:`, {
@@ -2970,7 +3159,7 @@ async function callAI(messages, expectJson = false, options = {}) {
     if (lastError) {
         throw new Error(`AI service unavailable: ${lastError.message}`);
     }
-    
+
     throw new Error('AI service unavailable');
 }
 
@@ -2988,14 +3177,14 @@ function escapeHtml(text) {
 /**
  * Export logs for debugging
  */
-window.getRoleplayLogs = function() {
+window.getRoleplayLogs = function () {
     return {
         scenarioLogs: window.roleplayLogs || [],
         aiLogs: window.roleplayAILogs || []
     };
 };
 
-window.downloadRoleplayLogs = function() {
+window.downloadRoleplayLogs = function () {
     const logs = window.getRoleplayLogs();
     const logContent = JSON.stringify(logs, null, 2);
     const blob = new Blob([logContent], { type: 'application/json' });
