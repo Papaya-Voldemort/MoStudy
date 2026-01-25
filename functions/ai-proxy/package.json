@@ -5,6 +5,6 @@
   "main": "src/index.js",
   "type": "module",
   "dependencies": {
-    "@openrouter/sdk": "^0.7.3"
+    "@openrouter/sdk": "^0.4.0"
   }
 }
