@@ -3031,23 +3031,43 @@ async function callAI(messages, expectJson = false, options = {}) {
                 console.log(`[AI-CALL-${callId}] No auth token available, proceeding without authentication`);
             }
 
-            console.log(`[AI-CALL-${callId}] Sending request to Appwrite Function "moStudy-AI"`);
+            console.log(`[AI-CALL-${callId}] Sending request to Appwrite Function "69758083003423f1ca41"`);
             const execution = await window.appwriteFunctions.createExecution(
-                'moStudy-AI', // Ensure this matches your Function ID exactly
+                '69758083003423f1ca41', // Function ID
                 JSON.stringify(requestBody),
-                false, // async=false
+                true, // async=true
                 '/',
                 'POST'
             );
 
-            const responseTime = new Date().toISOString();
+            const startPolling = Date.now();
+            let finalExecution = execution;
 
-            if (execution.status === 'failed') {
-                console.error(`[AI-CALL-${callId}] ERROR Execution failed:`, execution.errors);
-                throw new Error(`AI Function failed: ${execution.errors}`);
+            // Poll until completed
+            while (finalExecution.status !== 'completed') {
+                if (Date.now() - startPolling > 60000) { // 60s timeout
+                    throw new Error("AI Execution timed out waiting for result");
+                }
+                
+                await new Promise(r => setTimeout(r, 1000));
+                
+                try {
+                    finalExecution = await window.appwriteFunctions.getExecution(
+                        '69758083003423f1ca41',
+                        execution.$id
+                    );
+                } catch (pollErr) {
+                    console.warn(`[AI-CALL-${callId}] Polling error:`, pollErr);
+                    // Continue polling unless it's a fatal error
+                }
+
+                if (finalExecution.status === 'failed') {
+                    throw new Error(finalExecution.errors || "AI Function failed");
+                }
             }
 
-            const data = JSON.parse(execution.responseBody);
+            const responseTime = new Date().toISOString();
+            const data = JSON.parse(finalExecution.responseBody);
             console.log(`[AI-CALL-${callId}] Response received at ${responseTime}`);
 
             if (data.error) {

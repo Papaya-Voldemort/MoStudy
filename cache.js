@@ -39,7 +39,10 @@ const MoStudyCache = {
                     score: Number(data.score) || 0,
                     totalQuestions: Number(data.totalQuestions) || 0,
                     correctAnswers: Number(data.correctAnswers) || 0,
-                    categoryScores: data.categoryScores || {}
+                    // Ensure categoryScores is stringified for Appwrite String attribute
+                    categoryScores: typeof data.categoryScores === 'object' 
+                        ? JSON.stringify(data.categoryScores) 
+                        : String(data.categoryScores || '{}')
                 };
             } else {
                 reportDoc = {
@@ -48,6 +51,10 @@ const MoStudyCache = {
                     difficulty: String(data.difficulty || 'official'),
                     judgeScore: Number(data.judgeScore) || 0,
                     feedback: String(data.feedback || ''),
+                    // Ensure categoryScores is stringified
+                    categoryScores: typeof data.categoryScores === 'object' 
+                        ? JSON.stringify(data.categoryScores) 
+                        : String(data.categoryScores || '{}'),
                     fullTranscript: String(data.fullTranscript || '')
                 };
             }

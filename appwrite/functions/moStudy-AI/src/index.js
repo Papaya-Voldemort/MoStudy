@@ -15,38 +15,69 @@ import { Client } from 'node-appwrite';
 */
 
 export default async ({ req, res, log, error }) => {
-  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || req.variables?.OPENROUTER_API_KEY;
 
   if (!OPENROUTER_API_KEY) {
     error('AI API Key not configured');
     return res.json({ error: 'AI API Key not configured' }, 500);
   }
 
-  // Handle payload parsing
+  // Handle payload parsing robustly
   let body = {};
   try {
-      body = req.body ? (typeof req.body === 'string' ? JSON.parse(req.body) : req.body) : {};
+      if (typeof req.body === 'string') {
+          body = JSON.parse(req.body);
+      } else if (req.body && typeof req.body === 'object') {
+          body = req.body;
+      } else if (req.payload) {
+          body = JSON.parse(req.payload);
+      }
   } catch (e) {
+      error('Failed to parse body: ' + e.message);
       body = {};
   }
   
   const { messages, model, temperature } = body;
 
   if (!messages) {
+      log('Request body received: ' + JSON.stringify(body));
       return res.json({ error: 'Missing messages in payload' }, 400);
   }
 
   try {
+    const resolvedModel = model || 'google/gemini-3-flash-preview';
+    
+    // Extract referer from request or use allowed domains
+    let referer = req.headers?.origin || req.headers?.referer || 'https://mostudy.org';
+    
+    // Ensure referer is one of the whitelisted domains
+    const allowedDomains = [
+      'https://zany-telegram-v6p55vxwjxgph9v-3000.app.github.dev',
+      'https://mostudy.org',
+      'https://mostudy.appwrite.network',
+      'https://mostudy.app'
+    ];
+    
+    const refererUrl = referer.includes('http') ? referer : 'https://' + referer;
+    const isAllowed = allowedDomains.some(domain => refererUrl.includes(domain.replace('https://', '')));
+    
+    if (!isAllowed) {
+      referer = 'https://mostudy.org'; // fallback to primary domain
+    } else {
+      referer = refererUrl;
+    }
+    
+    log(`Calling OpenRouter with model: ${resolvedModel}, referer: ${referer}`);
     const response = await fetch('https://openrouter.io/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://mostudy.app', 
+        'HTTP-Referer': referer, 
         'X-Title': 'MoStudy'
       },
       body: JSON.stringify({
-        model: model || 'google/gemini-2.0-flash-001', // Updated to latest preview if available, or fallback
+        model: resolvedModel,
         messages: messages,
         temperature: temperature || 0.7
       })

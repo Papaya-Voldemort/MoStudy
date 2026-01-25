@@ -896,7 +896,39 @@ async function generateAIReview() {
     const postToAI = async (messages) => {
         const requestBody = {
             messages,
-            temperature: 0
+            temperature: 0,
+            model: "google/gemini-3-flash-preview"
+        };
+
+        const parseAIResponse = (data) => {
+            if (data?.error) {
+                throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+            }
+
+            // Handle chat-completions envelopes if present
+            if (data?.choices?.[0]?.message?.content && typeof data.choices[0].message.content === 'string') {
+                const parsed = safeJsonParse(data.choices[0].message.content);
+                if (!parsed) throw new Error("Could not parse AI message content as JSON");
+                return parsed;
+            }
+
+            return data;
+        };
+
+        const fallbackToLocalApi = async () => {
+            const res = await fetch('/api/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Local AI endpoint failed (${res.status}): ${errText}`);
+            }
+
+            const data = await res.json();
+            return parseAIResponse(data);
         };
 
         try {
@@ -904,36 +936,57 @@ async function generateAIReview() {
                 throw new Error("Appwrite Functions not initialized");
             }
 
-            // Using Appwrite Function "moStudy-AI"
+            // Using Appwrite Function
             const execution = await window.appwriteFunctions.createExecution(
-                'moStudy-AI', // Ensure this matches your Function ID exactly
+                '69758083003423f1ca41', // Function ID
                 JSON.stringify(requestBody),
-                false, // async=false
+                true, // async=true (Prevents timeouts)
                 '/',
                 'POST'
             );
 
-            if (execution.status === 'failed') {
-                throw new Error(execution.errors || "AI Function failed");
+            // Start checking for completion
+            const startPolling = Date.now();
+            let finalExecution = execution;
+
+            while (finalExecution.status !== 'completed') {
+                if (Date.now() - startPolling > 60000) { // 60s timeout
+                    throw new Error("AI Execution timed out waiting for result");
+                }
+                
+                await new Promise(r => setTimeout(r, 1000));
+                finalExecution = await window.appwriteFunctions.getExecution(
+                    '69758083003423f1ca41',
+                    execution.$id
+                );
+
+                if (finalExecution.status === 'failed') {
+                    console.error("AI Function execution failed. Status:", finalExecution.status);
+                    console.error("Execution Errors:", finalExecution.errors);
+                    console.error("Execution Log:", finalExecution.logs);
+                    const responseBody = finalExecution.responseBody;
+                    let responseError = responseBody;
+                    try {
+                        const parsed = responseBody ? JSON.parse(responseBody) : null;
+                        if (parsed?.error) responseError = parsed.error;
+                    } catch {
+                        // keep raw responseBody
+                    }
+                    throw new Error(responseError || finalExecution.errors || "AI Function failed - check Appwrite console logs");
+                }
             }
 
-            const data = JSON.parse(execution.responseBody);
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            // Handle chat-completions envelopes if present
-            if (data.choices && data.choices[0] && data.choices[0].message && typeof data.choices[0].message.content === 'string') {
-                const parsed = safeJsonParse(data.choices[0].message.content);
-                if (!parsed) throw new Error("Could not parse AI message content as JSON");
-                return parsed;
-            }
-
-            return data;
+            const data = finalExecution.responseBody ? JSON.parse(finalExecution.responseBody) : {};
+            return parseAIResponse(data);
         } catch (error) {
             console.error("AI Request Error:", error);
-            throw error;
+            // Dev fallback: try local API route if Appwrite fails
+            try {
+                return await fallbackToLocalApi();
+            } catch (fallbackError) {
+                console.error("AI Local Fallback Error:", fallbackError);
+                throw error;
+            }
         }
     };
 

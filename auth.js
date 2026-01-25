@@ -316,13 +316,16 @@ const bindSettingsListeners = () => {
 
 const updateUI = async () => {
     const btn = document.getElementById("google-signin-btn");
-    console.log('📝 updateUI called, looking for button with id="google-signin-btn"');
-    console.log('🔍 Button found:', !!btn);
     
     if (!btn) {
-        console.warn('⚠️ Button not found in DOM!');
+        // Only log if we expect to find it (on account page)
+        if (window.location.pathname.includes('account')) {
+            console.warn('⚠️ Google Sign-in button not found in DOM on account page!');
+        }
         return;
     }
+    
+    console.log('📝 updateUI: found sign-in button, checking auth status...');
     
     try {
         const user = await appwriteAccount.get();

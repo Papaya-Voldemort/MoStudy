@@ -15,13 +15,13 @@ Appwrite requires manual indexing for any field used in a `Query`. If you see "I
 ## 2. Collection: `quizReports`
 You need to create **two** separate indexes for this collection.
 
-### Index A: `userId`
+### Index A: `userid`
 *   Click **+ Create Index**.
-*   **Index Key:** `userId_index` (or just `userId`)
+*   **Index Key:** `userid_index`
 *   **Index Type:** `Key`
 *   **Attributes:** 
-    *   Select `userId` from the dropdown.
-    *   **CRITICAL:** Ensure the attribute is `userid` (lowercase) or `userId` (camelCase) consistent with `cache.js`, and is a **STRING** type. Current code uses `userid`.
+    *   Select **`userid`** (lowercase) from the dropdown. 
+    *   *Note*: Ensure you have created the attribute as `userid` (lowercase) and type **String**.
     *   Order: `ASC`
 *   Click **Create**.
 
