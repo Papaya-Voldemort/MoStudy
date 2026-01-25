@@ -1,4 +1,4 @@
-import { Client } from 'node-appwrite';
+import { OpenRouter } from '@openrouter/sdk';
 
 /*
   'req' variable has:
@@ -48,7 +48,7 @@ export default async ({ req, res, log, error }) => {
     return res.json({ error: 'Invalid JSON payload', details: e.message }, 400);
   }
 
-  const { messages, model, temperature } = payload;
+  const { messages, model, temperature, response_format, max_tokens, top_p } = payload;
 
   if (!messages || !Array.isArray(messages)) {
     log('✗ Invalid payload: missing or invalid messages array');
@@ -57,59 +57,27 @@ export default async ({ req, res, log, error }) => {
 
   try {
     const resolvedModel = model || 'google/gemini-3-flash-preview';
-    
-    // Extract referer from request or use allowed domains
-    let referer = req.headers?.origin || req.headers?.referer || 'https://mostudy.org';
-    
-    // Whitelisted domains
-    const allowedDomains = [
-      'https://zany-telegram-v6p55vxwjxgph9v-3000.app.github.dev',
-      'https://mostudy.org',
-      'https://mostudy.appwrite.network',
-      'https://mostudy.app',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000'
-    ];
-    
-    // Check if the referer is in the whitelist or contains a whitelisted keyword
-    const refererUrl = referer.includes('http') ? referer : 'https://' + referer;
-    const isAllowed = allowedDomains.some(domain => {
-        const cleanDomain = domain.replace(/^https?:\/\//, '');
-        return refererUrl.includes(cleanDomain);
-    });
-    
-    const finalReferer = isAllowed ? refererUrl : 'https://mostudy.org';
 
-    log(`Calling OpenRouter | Model: ${resolvedModel} | Referer: ${finalReferer}`);
-    
-    const response = await fetch('https://openrouter.io/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': finalReferer,
-        'X-Title': 'MoStudy'
-      },
-      body: JSON.stringify({
-        model: resolvedModel,
-        messages: messages,
-        temperature: temperature !== undefined ? temperature : 0.7
-      })
+    log(`Calling Hack Club AI Proxy | Model: ${resolvedModel}`);
+
+    const client = new OpenRouter({
+      apiKey: OPENROUTER_API_KEY,
+      serverURL: 'https://ai.hackclub.com/proxy/v1'
     });
 
-    log(`✓ OpenRouter Status: ${response.status}`);
+    const response = await client.chat.send({
+      model: resolvedModel,
+      messages,
+      stream: false,
+      temperature: temperature !== undefined ? temperature : 0.7,
+      ...(response_format ? { response_format } : {}),
+      ...(max_tokens ? { max_tokens } : {}),
+      ...(top_p ? { top_p } : {})
+    });
 
-    if (!response.ok) {
-        const errText = await response.text();
-        error(`✗ OpenRouter upstream error: ${response.status} - ${errText}`);
-        return res.json({ error: 'AI Provider Error', status: response.status, details: errText }, response.status);
-    }
+    log(`✓ AI response received successfully. Response preview: ${JSON.stringify(response).substring(0, 150)}...`);
 
-    const data = await response.json();
-    log(`✓ AI response received successfully. Response preview: ${JSON.stringify(data).substring(0, 150)}...`);
-    
-    return res.json(data);
-
+    return res.json(response);
   } catch (err) {
     error('✗ AI Function Error: ' + err.message);
     return res.json({ error: 'Internal Function Error', details: err.message }, 500);

@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "module",
   "dependencies": {
-    "node-appwrite": "^14.0.0"
+    "@openrouter/sdk": "^0.7.3"
   },
   "engines": {
     "node": ">=18.0.0"

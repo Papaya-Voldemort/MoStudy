@@ -222,6 +222,24 @@ if (document.readyState === 'loading') {
     initializeApp();
 }
 
+/**
+ * Prefer the global getAuthToken() from auth.js. This wrapper avoids
+ * redeclaring the global identifier in pages that also include other scripts.
+ */
+async function getAuthTokenMaybe() {
+    if (typeof window.getAuthToken === 'function') {
+        try {
+            return await window.getAuthToken();
+        } catch (e) {
+            console.error('Failed to get Appwrite auth token from window.getAuthToken:', e);
+            return null;
+        }
+    }
+    
+    // If the global isn't available, return null so callers can proceed unauthenticated
+    return null;
+}
+
 function setupEventListeners() {
     if (jsonUpload) {
         jsonUpload.addEventListener('change', async (event) => {
@@ -851,7 +869,7 @@ async function saveQuizReport(categoryScores) {
             )
         };
 
-        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'quiz', reportData);
+        await MoStudyCache.saveReportAndUpdateCache(getAuthTokenMaybe, 'quiz', reportData);
         console.log('Quiz report saved successfully');
     } catch (error) {
         console.error('Failed to save quiz report:', error);

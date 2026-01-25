@@ -365,11 +365,21 @@ function showLoginLock() {
 // });
 
 /**
- * Get auth token for API requests (Appwrite JWT).
- * Returns null if not authenticated, but API still works without it.
+ * Prefer global getAuthToken() from auth.js. This wrapper avoids redeclaring
+ * the global identifier and returns null when no token is available.
  */
-async function getAuthToken() {
-    // If not initialized, wait for it
+async function getAuthTokenMaybe() {
+    // Prefer the global function if available
+    if (typeof window.getAuthToken === 'function') {
+        try {
+            return await window.getAuthToken();
+        } catch (e) {
+            console.error('Failed to get Appwrite auth token from window.getAuthToken:', e);
+            return null;
+        }
+    }
+
+    // If auth initialization may happen later, wait briefly for it
     if (!window.authInitialized) {
         console.log("Waiting for auth initialization before getting token...");
         try {
@@ -378,7 +388,7 @@ async function getAuthToken() {
                 new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
             ]);
         } catch (e) {
-            console.warn("Auth init wait timed out in getAuthToken");
+            console.warn("Auth init wait timed out in getAuthTokenMaybe");
         }
     }
 
@@ -424,7 +434,7 @@ async function saveRoleplayReport(totalScore, judgeResults) {
             categoryScores
         };
 
-        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'roleplay', reportData);
+        await MoStudyCache.saveReportAndUpdateCache(getAuthTokenMaybe, 'roleplay', reportData);
         console.log('Roleplay report saved successfully');
     } catch (error) {
         console.error('Failed to save roleplay report:', error);
@@ -3001,15 +3011,7 @@ async function callAI(messages, expectJson = false, options = {}) {
         messagesCount: messages.length,
         firstMessageRole: messages[0]?.role,
         temperature: requestBody.temperature,
-        hasToken: !!(await getAuthToken())
-    });
-
-    // Log message content preview
-    messages.forEach((msg, idx) => {
-        const contentPreview = typeof msg.content === 'string'
-            ? msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
-            : 'non-string content';
-        console.log(`[AI-CALL-${callId}] Message ${idx + 1}:`, { role: msg.role, contentLength: typeof msg.content === 'string' ? msg.content.length : 'N/A', preview: contentPreview });
+            hasToken: !!(await getAuthTokenMaybe())
     });
 
     // Increased retries for robust roleplay experience
@@ -3022,7 +3024,7 @@ async function callAI(messages, expectJson = false, options = {}) {
         try {
             console.log(`[AI-CALL-${callId}] ATTEMPT ${attempt + 1}/${maxRetries + 1} at ${attemptTimestamp}`);
 
-            const token = await getAuthToken();
+            const token = await getAuthTokenMaybe();
             const headers = { "Content-Type": "application/json" };
             if (token) {
                 headers["Authorization"] = `Bearer ${token}`;
