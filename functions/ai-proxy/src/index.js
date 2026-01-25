@@ -60,7 +60,8 @@ export default async ({ req, res, log, error }) => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': referer,
+        // 'HTTP-Referer': referer, // Removed invalid header key for OpenRouter
+        'Referer': referer, // Standard header
         'X-Title': 'MoStudy'
       },
       body: JSON.stringify({
