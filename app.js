@@ -1,36 +1,6 @@
 // --- CATALOG ---
 
-// Helper to get auth token for cache operations and AI requests
-async function getAuthToken() {
-    // If not initialized, wait for it
-    if (!window.authInitialized) {
-        try {
-            await Promise.race([
-                new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
-                new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
-            ]);
-        } catch (e) {
-            // silent fail
-        }
-    }
-
-    try {
-        const client = window.auth0Client;
-        if (client) {
-            const isAuthenticated = await client.isAuthenticated();
-            if (!isAuthenticated) return null;
-
-            return await client.getTokenSilently({
-                authorizationParams: {
-                    audience: "https://mostudy.org/api"
-                }
-            });
-        }
-    } catch (e) {
-        console.warn('Failed to get auth token:', e);
-    }
-    return null;
-}
+// Note: getAuthToken is defined in auth.js and used globally
 
 const catalog = [
     {
@@ -929,52 +899,42 @@ async function generateAIReview() {
             temperature: 0
         };
 
-        // Retry with exponential backoff on 429s
-        const maxRetries = 3;
-        let response;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            const token = await getAuthToken();
-            const headers = { "Content-Type": "application/json" };
-            if (token) {
-                headers["Authorization"] = `Bearer ${token}`;
+        try {
+            if (!window.appwriteFunctions) {
+                throw new Error("Appwrite Functions not initialized");
             }
 
-            response = await fetch("/api/ai/review", {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify(requestBody)
-            });
+            // Using Appwrite Function "moStudy-AI"
+            const execution = await window.appwriteFunctions.createExecution(
+                'moStudy-AI', // Ensure this matches your Function ID exactly
+                JSON.stringify(requestBody),
+                false, // async=false
+                '/',
+                'POST'
+            );
 
-            if (response.status !== 429) break;
-            const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
-            await sleep(backoffMs);
-        }
+            if (execution.status === 'failed') {
+                throw new Error(execution.errors || "AI Function failed");
+            }
 
-        const rawText = await response.text();
-        if (response.status === 401 || response.status === 403) {
-            const data = safeJsonParse(rawText);
-            const msg = data?.message || data?.error || "Sign in to view AI feedback (403).";
-            throw new Error(msg);
-        }
-        if (!response.ok) {
-            const snippet = rawText ? rawText.slice(0, 180) : "";
-            throw new Error(`API request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`);
-        }
+            const data = JSON.parse(execution.responseBody);
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
 
-        const data = safeJsonParse(rawText);
-        if (!data) {
-            const snippet = rawText ? rawText.slice(0, 180) : "";
-            throw new Error(`AI response was not valid JSON${snippet ? `: ${snippet}` : ''}`);
-        }
+            // Handle chat-completions envelopes if present
+            if (data.choices && data.choices[0] && data.choices[0].message && typeof data.choices[0].message.content === 'string') {
+                const parsed = safeJsonParse(data.choices[0].message.content);
+                if (!parsed) throw new Error("Could not parse AI message content as JSON");
+                return parsed;
+            }
 
-        // Handle chat-completions envelopes if present
-        if (data.choices && data.choices[0] && data.choices[0].message && typeof data.choices[0].message.content === 'string') {
-            const parsed = safeJsonParse(data.choices[0].message.content);
-            if (!parsed) throw new Error("Could not parse AI message content as JSON");
-            return parsed;
+            return data;
+        } catch (error) {
+            console.error("AI Request Error:", error);
+            throw error;
         }
-
-        return data;
     };
 
     // Build normalized question objects (stable ids)

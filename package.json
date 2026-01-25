@@ -5,8 +5,7 @@
   "dependencies": {
     "darkreader": "^4.9.119",
     "express": "^5.2.1",
-    "express-oauth2-jwt-bearer": "^1.7.3",
-    "firebase-admin": "^12.5.0",
-    "vercel": "^50.4.6"
+    "node-appwrite": "^13.0.0",
+    "vercel": "^50.5.0"
   }
 }

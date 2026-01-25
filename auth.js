@@ -1,5 +1,9 @@
-// Global auth0 instance
-let auth0Client = null;
+// Global Appwrite instance
+let appwriteClient = null;
+let appwriteAccount = null;
+let appwriteDatabases = null;
+let appwriteStorage = null;
+let appwriteFunctions = null;
 
 // Global user settings
 window.userSettings = {
@@ -7,34 +11,116 @@ window.userSettings = {
     timerAlerts: true
 };
 
-const fetchAuthConfig = () => {
-    return {
-        domain: "dev-p6gwlkrt2p6bu5m0.us.auth0.com",
-        clientId: "de5IT4fjw4OebBrhkKA7Dp0D6vO2L2Bd",
-        audience: "https://mostudy.org/api"
-    };
+// Appwrite configuration - hardcoded from setup
+const APPWRITE_CONFIG = {
+    endpoint: 'https://sfo.cloud.appwrite.io/v1',
+    projectId: '697553c800048b6483c8',
+    databaseId: '697561a6002b5ee2db1d',
+    collections: {
+        users: 'users', // If you see 404 for 'users', change this to the long string ID
+        quizReports: 'quizReports',
+        roleplayReports: 'roleplayReports'
+    }
+};
+
+// Appwrite SDK CDN (pinned and verified IIFE version)
+const APPWRITE_SDK_URL = 'https://cdn.jsdelivr.net/npm/appwrite@16.1.0/dist/iife/sdk.min.js';
+
+const ensureAppwriteSdk = () => {
+    if (window.Appwrite) return Promise.resolve(window.Appwrite);
+    if (window.__appwriteSdkPromise) return window.__appwriteSdkPromise;
+
+    console.log('🚀 Initiating Appwrite SDK load...');
+    window.__appwriteSdkPromise = new Promise((resolve, reject) => {
+        const poll = () => {
+            if (window.Appwrite) {
+                console.log('✅ Appwrite SDK detected');
+                resolve(window.Appwrite);
+                return true;
+            }
+            return false;
+        };
+
+        if (poll()) return;
+
+        const script = document.createElement('script');
+        script.src = APPWRITE_SDK_URL;
+        script.async = true;
+        // Mark it so we don't accidentally load multiple
+        script.dataset.appwriteSdk = 'true';
+        
+        script.onload = () => {
+            if (!poll()) {
+                console.error('❌ Appwrite loaded but global missing');
+                reject(new Error('Appwrite global missing after load'));
+            }
+        };
+        
+        script.onerror = (err) => {
+            console.error('❌ Appwrite script failed to load:', err);
+            reject(new Error('Appwrite SDK network failure'));
+        };
+
+        document.head.appendChild(script);
+
+        // Safety timeout
+        setTimeout(() => {
+            if (!window.Appwrite) {
+                console.warn('🕒 Appwrite load timed out');
+                reject(new Error('Load timeout'));
+            }
+        }, 10000);
+    });
+
+    return window.__appwriteSdkPromise;
 };
 
 const configureClient = async () => {
-    const config = fetchAuthConfig();
-    auth0Client = await auth0.createAuth0Client({
-        domain: config.domain,
-        clientId: config.clientId,
-        // Cookies would be ideal, but Auth0 SPA SDK uses browser storage. Keep localStorage fallback.
-        cacheLocation: 'localstorage',
-        useRefreshTokens: true,
-        useRefreshTokensFallback: true,
-        authorizationParams: {
-            audience: config.audience,
-            redirect_uri: window.location.origin + "/account"
-        }
-    });
+    try {
+        // Ensure the SDK is loaded before using it
+        const AppwriteSdk = await ensureAppwriteSdk();
 
-    // CRITICAL: Expose to window for other scripts (roleplay.js, app.js)
-    window.auth0Client = auth0Client;
+        // Initialize Appwrite SDK with hardcoded config
+        appwriteClient = new AppwriteSdk.Client()
+            .setEndpoint(APPWRITE_CONFIG.endpoint)
+            .setProject(APPWRITE_CONFIG.projectId);
+
+        appwriteAccount = new AppwriteSdk.Account(appwriteClient);
+        appwriteDatabases = new AppwriteSdk.Databases(appwriteClient);
+        appwriteStorage = new AppwriteSdk.Storage(appwriteClient);
+        appwriteFunctions = new AppwriteSdk.Functions(appwriteClient);
+
+        // Expose to window for other scripts
+        window.appwriteClient = appwriteClient;
+        window.appwriteAccount = appwriteAccount;
+        window.appwriteDatabases = appwriteDatabases;
+        window.appwriteStorage = appwriteStorage;
+        window.appwriteFunctions = appwriteFunctions;
+        window.APPWRITE_CONFIG = APPWRITE_CONFIG;
+        window.appwrite = {
+            client: appwriteClient,
+            account: appwriteAccount,
+            databases: appwriteDatabases,
+            storage: appwriteStorage,
+            functions: appwriteFunctions,
+            config: APPWRITE_CONFIG
+        };
+
+        console.log('✅ Appwrite client configured with endpoint:', APPWRITE_CONFIG.endpoint);
+        console.log('✅ Project ID:', APPWRITE_CONFIG.projectId);
+    } catch (error) {
+        console.error('❌ Failed to configure Appwrite:', error);
+        throw error;
+    }
 };
 
 let settingsListenersBound = false;
+
+const JWT_CACHE_TTL_MS = 5 * 60 * 1000;
+const jwtCache = {
+    value: null,
+    createdAt: 0
+};
 
 const getSettingsElements = () => {
     return {
@@ -51,14 +137,38 @@ const setSettingsEnabled = (enabled) => {
     if (saveBtn) saveBtn.disabled = !enabled;
 };
 
+const getAuthToken = async () => {
+    try {
+        if (!appwriteAccount) return null;
+
+        if (jwtCache.value && (Date.now() - jwtCache.createdAt) < JWT_CACHE_TTL_MS) {
+            return jwtCache.value;
+        }
+
+        const jwt = await appwriteAccount.createJWT();
+        if (!jwt?.jwt) return null;
+
+        jwtCache.value = jwt.jwt;
+        jwtCache.createdAt = Date.now();
+
+        return jwtCache.value;
+    } catch (error) {
+        console.warn('Failed to get auth session:', error);
+        return null;
+    }
+};
+
 const apiRequest = async (path, options = {}) => {
-    const token = await auth0Client.getTokenSilently();
+    const token = await getAuthToken();
     const headers = {
-        Authorization: `Bearer ${token}`,
         ...(options.headers || {})
     };
 
-    if (options.body) {
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (options.body && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
     }
 
@@ -81,25 +191,52 @@ const showStatus = (message, isError = false) => {
     }, 3000);
 };
 
+const showOAuthErrorIfPresent = () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error')) {
+        console.error('OAuth error returned from Appwrite. Verify OAuth redirect URLs and Google provider setup.');
+        showStatus('Login failed. Check Appwrite OAuth settings.', true);
+    }
+};
+
 const loadSettings = async () => {
     try {
-        const response = await apiRequest('/api/user-settings');
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            console.warn('Failed to load settings:', errData.message || 'Server error');
+        if (!appwriteAccount) return;
+        
+        let user;
+        try {
+            user = await appwriteAccount.get();
+        } catch (e) {
+            console.log('ℹ️ User not logged in, skipping settings load');
             return;
         }
+        
+        const userId = user.$id;
+        const data = await appwriteDatabases.getDocument(
+            APPWRITE_CONFIG.databaseId,
+            APPWRITE_CONFIG.collections.users,
+            userId
+        );
 
-        const data = await response.json();
         window.userSettings = {
+            theme: data.theme || 'dark',
             emailNotifications: data.emailNotifications ?? true,
             timerAlerts: data.timerAlerts ?? true
         };
+
+        // Apply theme if retrieved
+        if (typeof applyTheme === 'function' && data.theme) {
+            applyTheme(data.theme);
+        }
 
         const { emailToggle, timerToggle } = getSettingsElements();
         if (emailToggle) emailToggle.checked = Boolean(window.userSettings.emailNotifications);
         if (timerToggle) timerToggle.checked = Boolean(window.userSettings.timerAlerts);
     } catch (error) {
+        if (error.code === 404) {
+             console.log('ℹ️ No settings found for user, using defaults');
+             return;
+        }
         console.error('Settings load error:', error);
         showStatus('Error loading settings', true);
     }
@@ -109,7 +246,11 @@ const saveSettings = async () => {
     const { emailToggle, timerToggle, saveBtn } = getSettingsElements();
     if (!emailToggle || !timerToggle) return;
 
+    // Get current theme from localStorage/theme.js
+    const currentTheme = localStorage.getItem("mostudy-theme") || "dark";
+
     window.userSettings = {
+        theme: currentTheme,
         emailNotifications: emailToggle.checked,
         timerAlerts: timerToggle.checked
     };
@@ -121,14 +262,35 @@ const saveSettings = async () => {
 
     showStatus('Saving...');
     try {
-        const response = await apiRequest('/api/user-settings', {
-            method: 'POST',
-            body: JSON.stringify(window.userSettings)
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.message || 'Failed to save settings');
+        const userId = (await appwriteAccount.get()).$id;
+        
+        try {
+            await appwriteDatabases.updateDocument(
+                APPWRITE_CONFIG.databaseId,
+                APPWRITE_CONFIG.collections.users,
+                userId,
+                {
+                    ...window.userSettings
+                }
+            );
+        } catch (err) {
+            if (err.code === 404) {
+                // If profile doesn't exist, create it with required defaults
+                await appwriteDatabases.createDocument(
+                    APPWRITE_CONFIG.databaseId,
+                    APPWRITE_CONFIG.collections.users,
+                    userId,
+                    {
+                        ...window.userSettings,
+                        totalQuizzesCompleted: 0,
+                        totalRoleplaysCompleted: 0,
+                        averageQuizScore: 0,
+                        averageRoleplayScore: 0
+                    }
+                );
+            } else {
+                throw err;
+            }
         }
         showStatus('Settings saved');
     } catch (error) {
@@ -153,23 +315,38 @@ const bindSettingsListeners = () => {
 };
 
 const updateUI = async () => {
-    const isAuthenticated = await auth0Client.isAuthenticated();
     const btn = document.getElementById("google-signin-btn");
+    console.log('📝 updateUI called, looking for button with id="google-signin-btn"');
+    console.log('🔍 Button found:', !!btn);
     
-    if (!btn) return;
+    if (!btn) {
+        console.warn('⚠️ Button not found in DOM!');
+        return;
+    }
+    
+    try {
+        const user = await appwriteAccount.get();
+        console.log('✅ User authenticated:', user.email);
+        
+        // Clone button to remove old event listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
 
-    // Clone button to remove old event listeners
-    const newBtn = btn.cloneNode(true);
-    btn.parentNode.replaceChild(newBtn, btn);
-
-    if (isAuthenticated) {
-        const user = await auth0Client.getUser();
         newBtn.innerHTML = `<span>Sign Out (${user.name || user.email})</span>`;
         newBtn.onclick = logout;
+        console.log('✅ Sign out button set');
         setSettingsEnabled(true);
         await loadSettings();
         bindSettingsListeners();
-    } else {
+    } catch (error) {
+        // Not authenticated
+        console.log('ℹ️ User not authenticated, showing login button');
+        console.log('Error details:', error?.message || error);
+
+        // Clone button to remove old event listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
         newBtn.innerHTML = `
         <svg class="h-6 w-6" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -178,43 +355,70 @@ const updateUI = async () => {
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
         </svg>
         <span>Sign in with Google</span>`;
-        newBtn.onclick = login;
-        setSettingsEnabled(false);
         
-        // Check if configuration is missing
-        if (fetchAuthConfig().clientId === "YOUR_AUTH0_CLIENT_ID") {
-            newBtn.innerHTML = "<span>Config Error: Generic Client ID</span>";
-            newBtn.onclick = () => alert("Please update auth.js with your Auth0 Client ID");
-        }
+        // Use addEventListener for more reliable event binding
+        newBtn.onclick = null;
+        newBtn.removeEventListener('click', login);
+        newBtn.addEventListener('click', login);
+        console.log('✅ Login button set with addEventListener');
+        setSettingsEnabled(false);
     }
 };
 
 const login = async () => {
     try {
-        const config = fetchAuthConfig();
-        await auth0Client.loginWithRedirect({
-            authorizationParams: {
-                connection: 'google-oauth2',
-                audience: config.audience
-            }
-        });
+        console.log('🔐 Login button clicked');
+        
+        if (!appwriteAccount) {
+            console.error('appwriteAccount is null or undefined');
+            throw new Error('Appwrite client not initialized');
+        }
+        
+        console.log('📍 Current origin:', window.location.origin);
+        console.log('✅ Appwrite Account ready, initiating OAuth2 session...');
+        
+        // Redirect to Appwrite OAuth provider
+        const successUrl = `${window.location.origin}/account`;
+        const failureUrl = `${window.location.origin}/account?error=true`;
+        console.log('Success URL:', successUrl);
+        console.log('Failure URL:', failureUrl);
+        
+        await appwriteAccount.createOAuth2Session(
+            'google',
+            successUrl,
+            failureUrl
+        );
+        console.log('✅ OAuth session created, redirecting...');
     } catch(e) {
-        console.error("Login Error:", e);
-        alert("Login failed. See console for details.");
+        console.error("❌ Login Error:", e);
+        console.error('Error details:', e?.message, e?.code, e?.response);
+        alert(`Login failed: ${e?.message || 'Unknown error'}. Check console.`);
     }
 };
 
-const logout = () => {
-    // Clear user cache on logout
-    if (typeof MoStudyCache !== 'undefined' && MoStudyCache.clearUserCache) {
-        MoStudyCache.clearUserCache();
-    }
-    
-    auth0Client.logout({
-        logoutParams: {
-            returnTo: window.location.origin + "/account"
+const logout = async () => {
+    try {
+        // Clear user cache on logout
+        if (typeof MoStudyCache !== 'undefined' && MoStudyCache.clearUserCache) {
+            MoStudyCache.clearUserCache();
         }
-    });
+
+        jwtCache.value = null;
+        jwtCache.createdAt = 0;
+        
+        // Delete all sessions
+        const sessions = await appwriteAccount.listSessions();
+        for (const session of sessions.sessions) {
+            await appwriteAccount.deleteSession(session.$id);
+        }
+
+        // Redirect to account page
+        window.location.href = '/account';
+    } catch (error) {
+        console.error('Logout Error:', error);
+        // Still redirect even if error
+        window.location.href = '/account';
+    }
 };
 
 // Initialize
@@ -222,37 +426,33 @@ const initAuth = async () => {
     if (window.authInitializing) return;
     window.authInitializing = true;
     
+    console.log('🔄 initAuth starting...');
     try {
         await configureClient();
-        
-        // Check for callback
-        const query = window.location.search;
-        if (query.includes("code=") && query.includes("state=")) {
-            try {
-                await auth0Client.handleRedirectCallback();
-                window.history.replaceState({}, document.title, "/account");
-            } catch (e) {
-                console.error("Callback Error:", e);
-            }
-        }
-        
+        console.log('✅ Client configured');
+        showOAuthErrorIfPresent();
+        console.log('🔄 Calling updateUI...');
         await updateUI();
+        console.log('✅ UI updated');
     } catch (e) {
         console.error("Critical Auth Initialization Error:", e);
     } finally {
         window.authInitialized = true;
         window.dispatchEvent(new CustomEvent('auth-initialized'));
-        console.log("Auth initialization complete");
+        console.log("✅ Auth initialization complete");
     }
 };
 
 if (document.readyState === 'loading') {
+    console.log('📄 DOM still loading, waiting for DOMContentLoaded...');
     document.addEventListener('DOMContentLoaded', initAuth);
 } else {
+    console.log('📄 DOM already loaded, calling initAuth...');
     initAuth();
 }
 
 // Expose auth functions to window for UI usage
 window.login = login;
 window.logout = logout;
-window.auth0Client = auth0Client; // Ensure client is accessible
+window.appwriteAccount = appwriteAccount; // Ensure client is accessible
+window.getAuthToken = getAuthToken;

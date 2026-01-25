@@ -361,12 +361,11 @@ function showLoginLock() {
 
 // Auth check removed - AI roleplay is now publicly accessible
 // window.addEventListener('load', () => {
-//     Delay slightly to ensure auth0 has time to process potential redirects
 //     setTimeout(checkLoginStatus, 1000);
 // });
 
 /**
- * Get auth token for API requests.
+ * Get auth token for API requests (Appwrite JWT).
  * Returns null if not authenticated, but API still works without it.
  */
 async function getAuthToken() {
@@ -384,26 +383,11 @@ async function getAuthToken() {
     }
 
     try {
-        const client = window.auth0Client;
-        if (client) {
-            // Check if authenticated first
-            const isAuthenticated = await client.isAuthenticated();
-            if (!isAuthenticated) return null;
-
-            return await client.getTokenSilently({
-                authorizationParams: {
-                    audience: "https://mostudy.org/api"
-                },
-                // Force a check if we suspect the token is bad
-                cacheMode: 'on-fast'
-            });
+        if (typeof window.getAuthToken === 'function') {
+            return await window.getAuthToken();
         }
     } catch (e) {
-        console.error('CRITICAL: Failed to get auth token:', e);
-        // If it's a 'login_required' error, we should return null so the UI can lock
-        if (e.error === 'login_required' || e.error === 'consent_required') {
-            return null;
-        }
+        console.error('Failed to get Appwrite auth token:', e);
     }
     return null;
 }
@@ -3047,47 +3031,30 @@ async function callAI(messages, expectJson = false, options = {}) {
                 console.log(`[AI-CALL-${callId}] No auth token available, proceeding without authentication`);
             }
 
-            console.log(`[AI-CALL-${callId}] Sending request to ${AI_API_ENDPOINT}`);
-            const response = await fetch(AI_API_ENDPOINT, {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify(requestBody)
-            });
+            console.log(`[AI-CALL-${callId}] Sending request to Appwrite Function "moStudy-AI"`);
+            const execution = await window.appwriteFunctions.createExecution(
+                'moStudy-AI', // Ensure this matches your Function ID exactly
+                JSON.stringify(requestBody),
+                false, // async=false
+                '/',
+                'POST'
+            );
 
             const responseTime = new Date().toISOString();
-            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                contentType: response.headers.get('content-type')
-            });
 
-            // If rate limited, retry with backoff
-            if (response.status === 429) {
-                if (attempt < maxRetries) {
-                    const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-                    console.warn(`[AI-CALL-${callId}] Rate limit hit (429). Retrying in ${backoffMs}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, backoffMs));
-                    continue;
-                }
+            if (execution.status === 'failed') {
+                console.error(`[AI-CALL-${callId}] ERROR Execution failed:`, execution.errors);
+                throw new Error(`AI Function failed: ${execution.errors}`);
             }
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const msg = errorData.message || errorData.error || response.statusText;
+            const data = JSON.parse(execution.responseBody);
+            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}`);
 
-                console.error(`[AI-CALL-${callId}] ERROR Response (Status ${response.status}):`, {
-                    message: msg,
-                    fullError: errorData,
-                    responseSize: response.headers.get('content-length')
-                });
-
-                if (response.status === 401 || response.status === 403) {
-                    throw new Error(`${msg || 'Authentication failed'} (Status ${response.status})`);
-                }
-                throw new Error(`API error (${response.status}): ${msg}`);
+            if (data.error) {
+                const msg = data.error.message || data.error || "Unknown AI error";
+                console.error(`[AI-CALL-${callId}] ERROR from AI Service:`, msg);
+                throw new Error(`AI error: ${msg}`);
             }
-
-            const data = await response.json();
 
             // Handle response format
             if (data.choices && data.choices[0]?.message?.content) {
