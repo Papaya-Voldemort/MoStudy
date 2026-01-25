@@ -1,5 +1,3 @@
-import { OpenRouter } from '@openrouter/sdk';
-
 /*
   'req' variable has:
     'headers' - object with request headers
@@ -60,24 +58,36 @@ export default async ({ req, res, log, error }) => {
 
     log(`Calling Hack Club AI Proxy | Model: ${resolvedModel}`);
 
-    const client = new OpenRouter({
-      apiKey: OPENROUTER_API_KEY,
-      serverURL: 'https://ai.hackclub.com/proxy/v1'
-    });
-
-    const response = await client.chat.send({
+    const requestBody = {
       model: resolvedModel,
       messages,
       stream: false,
-      temperature: temperature !== undefined ? temperature : 0.7,
-      ...(response_format ? { response_format } : {}),
-      ...(max_tokens ? { max_tokens } : {}),
-      ...(top_p ? { top_p } : {})
+      temperature: temperature !== undefined ? temperature : 0.7
+    };
+
+    if (response_format) requestBody.response_format = response_format;
+    if (max_tokens) requestBody.max_tokens = max_tokens;
+    if (top_p) requestBody.top_p = top_p;
+
+    const response = await fetch('https://ai.hackclub.com/proxy/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
     });
 
-    log(`✓ AI response received successfully. Response preview: ${JSON.stringify(response).substring(0, 150)}...`);
+    if (!response.ok) {
+      const errText = await response.text();
+      error(`✗ Hack Club proxy error: ${response.status} - ${errText}`);
+      return res.json({ error: 'AI Provider Error', status: response.status, details: errText }, response.status);
+    }
 
-    return res.json(response);
+    const data = await response.json();
+    log(`✓ AI response received successfully. Response preview: ${JSON.stringify(data).substring(0, 150)}...`);
+
+    return res.json(data);
   } catch (err) {
     error('✗ AI Function Error: ' + err.message);
     return res.json({ error: 'Internal Function Error', details: err.message }, 500);

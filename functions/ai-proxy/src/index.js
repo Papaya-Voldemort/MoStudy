@@ -1,5 +1,3 @@
-import { OpenRouter } from '@openrouter/sdk';
-
 export default async function handler(req, res) {
   // 1. Guard against non-POST requests
   if (req.method !== 'POST') {
@@ -44,22 +42,34 @@ export default async function handler(req, res) {
 
     log(`Calling Hack Club AI Proxy with model: ${resolvedModel}`);
 
-    const client = new OpenRouter({
-      apiKey: OPENROUTER_API_KEY,
-      serverURL: 'https://ai.hackclub.com/proxy/v1'
-    });
-
-    const response = await client.chat.send({
+    const requestBody = {
       model: resolvedModel,
       messages,
       stream: false,
-      temperature: temperature !== undefined ? temperature : 0.7,
-      ...(response_format ? { response_format } : {}),
-      ...(max_tokens ? { max_tokens } : {}),
-      ...(top_p ? { top_p } : {})
+      temperature: temperature !== undefined ? temperature : 0.7
+    };
+
+    if (response_format) requestBody.response_format = response_format;
+    if (max_tokens) requestBody.max_tokens = max_tokens;
+    if (top_p) requestBody.top_p = top_p;
+
+    const response = await fetch('https://ai.hackclub.com/proxy/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
     });
 
-    return res.json(response);
+    if (!response.ok) {
+      const errText = await response.text();
+      error(`✗ Hack Club proxy error: ${response.status} - ${errText}`);
+      return res.status(response.status).json({ error: 'AI Provider Error', status: response.status, details: errText });
+    }
+
+    const data = await response.json();
+    return res.json(data);
   } catch (err) {
     error('✗ AI Function Error: ' + err.message);
     return res.status(500).json({ error: 'Internal Function Error', details: err.message });
