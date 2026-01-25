@@ -3062,19 +3062,31 @@ async function callAI(messages, expectJson = false, options = {}) {
                 }
 
                 if (finalExecution.status === 'failed') {
-                    throw new Error(finalExecution.errors || "AI Function failed");
+                    console.error("AI Function execution failed. Status:", finalExecution.status);
+                    console.error("Execution Errors:", finalExecution.errors);
+                    console.error("Execution Log:", finalExecution.logs);
+                    const responseBody = finalExecution.responseBody;
+                    let responseError = responseBody;
+                    try {
+                        const parsed = responseBody ? JSON.parse(responseBody) : null;
+                        if (parsed?.error) responseError = parsed.error;
+                    } catch {
+                        // keep raw responseBody
+                    }
+                    throw new Error(responseError || finalExecution.errors || "AI Function failed - check Appwrite console logs");
                 }
             }
 
-            const responseTime = new Date().toISOString();
-            const data = JSON.parse(finalExecution.responseBody);
-            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}`);
-
+            const data = finalExecution.responseBody ? JSON.parse(finalExecution.responseBody) : {};
+            
             if (data.error) {
-                const msg = data.error.message || data.error || "Unknown AI error";
+                const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
                 console.error(`[AI-CALL-${callId}] ERROR from AI Service:`, msg);
                 throw new Error(`AI error: ${msg}`);
             }
+
+            const responseTime = new Date().toISOString();
+            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}`);
 
             // Handle response format
             if (data.choices && data.choices[0]?.message?.content) {

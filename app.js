@@ -1142,7 +1142,8 @@ Provide feedback for EVERY question provided, including correct ones. Be specifi
                 if (runId !== aiReviewRunId) return;
 
                 if (!resp || !Array.isArray(resp.questions_review)) {
-                    throw new Error("Invalid chunk response");
+                    console.error("Malformed AI Response:", resp);
+                    throw new Error(`Invalid chunk response: ${!resp ? 'Empty' : 'No questions_review array'}`);
                 }
 
                 // Merge into fast lookup map
