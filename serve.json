@@ -1,0 +1,9 @@
+{
+  "public": ".",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/study", "destination": "/study.html" },
+    { "source": "/account", "destination": "/account.html" },
+    { "source": "/roleplay", "destination": "/roleplay.html" }
+  ]
+}

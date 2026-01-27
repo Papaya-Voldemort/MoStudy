@@ -29,9 +29,13 @@ yarn-error.log
 .vercel/
 .vscode/
 .venv
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
 .vercel
 .env*.local
+
+# Other crap
+setup_appwrite.js

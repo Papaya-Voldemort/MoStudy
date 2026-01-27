@@ -3,10 +3,14 @@
     "dev": "npx serve ."
   },
   "dependencies": {
+    "appwrite": "^21.5.0",
     "darkreader": "^4.9.119",
     "express": "^5.2.1",
     "express-oauth2-jwt-bearer": "^1.7.3",
     "firebase-admin": "^12.5.0",
-    "vercel": "^50.4.6"
+    "node-appwrite": "^21.1.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }

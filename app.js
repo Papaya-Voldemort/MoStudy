@@ -1,35 +1,24 @@
+import { functions, databases, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
+import { SmartCache } from './lib/cache.js';
+import { ExecutionMethod, ID } from 'appwrite';
+
 // --- CATALOG ---
 
 // Helper to get auth token for cache operations and AI requests
 async function getAuthToken() {
-    // If not initialized, wait for it
+    // For Appwrite, we rely on the session cookie managed by the SDK.
+    // We just ensure we are initialized.
     if (!window.authInitialized) {
         try {
             await Promise.race([
                 new Promise(resolve => window.addEventListener('auth-initialized', resolve, { once: true })),
-                new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
+                new Promise((_, reject) => setTimeout(() => resolve(), 2000))
             ]);
-        } catch (e) {
-            // silent fail
-        }
+        } catch (e) {}
     }
-
-    try {
-        const client = window.auth0Client;
-        if (client) {
-            const isAuthenticated = await client.isAuthenticated();
-            if (!isAuthenticated) return null;
-
-            return await client.getTokenSilently({
-                authorizationParams: {
-                    audience: "https://mostudy.org/api"
-                }
-            });
-        }
-    } catch (e) {
-        console.warn('Failed to get auth token:', e);
-    }
-    return null;
+    
+    // Return user ID if logged in, else null
+    return (window.getCurrentUser && window.getCurrentUser()) ? window.getCurrentUser().$id : null;
 }
 
 const catalog = [
@@ -857,40 +846,52 @@ function finishQuiz() {
 }
 
 /**
- * Save the quiz report to Firestore via the backend API.
- * Updates the local cache with the returned data.
+ * Save the quiz report to Appwrite Database.
  */
 async function saveQuizReport(categoryScores) {
-    // Only save if cache helper is available
-    if (typeof MoStudyCache === 'undefined') {
-        console.warn('Cache helper not available, skipping quiz report save');
+    const user = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!user) {
+        console.log('User not logged in, skipping report save');
         return;
     }
 
     try {
         const reportData = {
-            category: currentTest?.title || 'Unknown',
+            user_id: user.$id,
+            test_id: currentTest?.id || 'unknown',
+            test_title: currentTest?.title || 'Unknown',
             score: Math.round((score / questions.length) * 100),
-            totalQuestions: questions.length,
-            correctAnswers: score,
-            categoryScores: Object.fromEntries(
+            total_questions: questions.length,
+            correct_count: score,
+            timestamp: new Date().toISOString(),
+            // Store complex object as string for simple attributes
+            category_metrics: JSON.stringify(Object.fromEntries(
                 Object.entries(categoryScores).map(([cat, stats]) => [
                     cat,
                     { correct: stats.correct, total: stats.total, percentage: Math.round((stats.correct / stats.total) * 100) }
                 ])
-            )
+            ))
         };
 
-        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'quiz', reportData);
-        console.log('Quiz report saved successfully');
+        // Create document in History collection
+        await databases.createDocument(
+            DB_ID,
+            COLLECTION_HISTORY,
+            ID.unique(), 
+            reportData
+        );
+        console.log('Quiz report saved to Appwrite');
+        
+        // Invalidate history cache if we ever add a history view
+        SmartCache.invalidate(`history_${user.$id}`);
+        
     } catch (error) {
         console.error('Failed to save quiz report:', error);
-        // Non-blocking - user can still see results
     }
 }
 
 // --- AI REVIEW FUNCTIONS ---
-async function generateAIReview() {
+async function generateAIReview_OLD() {
     const runId = ++aiReviewRunId;
 
     aiReviewError = null;
@@ -2007,5 +2008,117 @@ function playTimerAlert() {
         oscillator.stop(audioCtx.currentTime + 0.5);
     } catch (e) {
         console.error("Failed to play timer alert sound:", e);
+    }
+}
+
+// --- NEW APPWRITE AI REVIEW FUNCTION ---
+async function generateAIReview() {
+    console.log('Starting AI Review generation...');
+    const runId = ++aiReviewRunId;
+    aiReviewError = null;
+    aiReviewData = { overall_review: null, questions_review: [] };
+    aiFeedbackByQuestionId = {};
+    aiReviewLoading = true;
+    aiOverallLoading = true;
+    
+    // Update UI to show loading
+    renderAISummaryPanel();
+    updateAIFeedbackInReview();
+
+    try {
+        const user = window.getCurrentUser ? window.getCurrentUser() : null;
+        if (!user) {
+             throw new Error("Please sign in to view AI feedback.");
+        }
+
+        // Prepare payload for Appwrite Function
+        const payload = {
+            test_title: currentTest?.title || 'Practice Test',
+            user_id: user.$id,
+            questions: questions.map((q, i) => ({
+                id: i + 1,
+                text: q.text,
+                options: q.options,
+                correct_option_index: q.correct,
+                user_option_index: userAnswers[i],
+                category: q.category,
+                is_correct: userAnswers[i] === q.correct
+            }))
+        };
+
+        console.log('Sending payload to AI function...', payload.test_title);
+
+        // Call Appwrite Function (ID: 'ai-review')
+        // We use the ID from appwrite.json
+        const FUNCTION_ID = 'ai-review'; 
+        
+        let execution;
+        try {
+            execution = await functions.createExecution(
+                FUNCTION_ID,
+                JSON.stringify(payload),
+                false, // async: false = wait for result (sync)
+                '/', 
+                ExecutionMethod.POST,
+                {'Content-Type': 'application/json'}
+            );
+        } catch (execError) {
+            console.warn("Real AI function execution failed (likely not deployed or offline). Falling back to DUMMY mode.", execError);
+            // Fallback for MVP/Local without cloud function
+            execution = {
+                status: 'completed',
+                responseBody: JSON.stringify({
+                    overall_review: {
+                        overall_score: Math.round((score / questions.length) * 100),
+                        summary: "This is a **simulated AI review** (MVP Mode). Great job completing the test! In a full deployment, this would analyze your specific mistakes.",
+                        strengths: ["Persistance", "Topic Coverage"],
+                        weaknesses: ["Mock Data Only (Connect Real AI)", "Speed"],
+                        next_steps: ["Deploy Appwrite Cloud Function", "Configure OpenRouter Key", "Practice More"]
+                    },
+                    questions_review: questions.map((q, i) => ({
+                        question_id: i + 1,
+                        is_correct: userAnswers[i] === q.correct,
+                        feedback: userAnswers[i] === q.correct 
+                            ? "Correct! Good understanding of this concept." 
+                            : `Incorrect. The correct answer was '${q.options[q.correct]}'.`
+                    }))
+                })
+            };
+        }
+        
+        console.log('AI Function execution:', execution);
+
+        if (execution.status === 'failed') {
+             throw new Error("AI review generation failed on server. Log: " + execution.logs);
+        }
+
+        // Parse result
+        let result;
+        try {
+            result = JSON.parse(execution.responseBody);
+        } catch (e) {
+            throw new Error("Invalid JSON response from AI function: " + execution.responseBody);
+        }
+        
+        if (result.error) throw new Error(result.error);
+        
+        // Expected format: { overall_review: {...}, questions_review: [...] }
+        aiReviewData = result;
+        
+        // Map feedback back
+        if (aiReviewData.questions_review) {
+            aiReviewData.questions_review.forEach(item => {
+                aiFeedbackByQuestionId[item.question_id] = item;
+            });
+        }
+
+    } catch (e) {
+        console.error('AI Review failed:', e);
+        aiReviewError = e.message || "Unknown error generating review";
+    } finally {
+        aiReviewLoading = false;
+        aiOverallLoading = false;
+        renderAISummaryPanel();
+        updateAIFeedbackInReview();
     }
 }

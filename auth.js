@@ -1,174 +1,70 @@
-// Global auth0 instance
-let auth0Client = null;
+// Imports from our initialized Appwrite client.
+// We also import databases to handle user preferences.
+import { account, databases, DB_ID, COLLECTION_USERS } from './lib/appwrite.js';
+import { SmartCache } from './lib/cache.js';
+import { OAuthProvider, ID } from 'appwrite';
 
-// Global user settings
-window.userSettings = {
-    emailNotifications: true,
-    timerAlerts: true
-};
+// Global user state
+let currentUser = null;
 
-const fetchAuthConfig = () => {
-    return {
-        domain: "dev-p6gwlkrt2p6bu5m0.us.auth0.com",
-        clientId: "de5IT4fjw4OebBrhkKA7Dp0D6vO2L2Bd",
-        audience: "https://mostudy.org/api"
-    };
-};
-
-const configureClient = async () => {
-    const config = fetchAuthConfig();
-    auth0Client = await auth0.createAuth0Client({
-        domain: config.domain,
-        clientId: config.clientId,
-        // Cookies would be ideal, but Auth0 SPA SDK uses browser storage. Keep localStorage fallback.
-        cacheLocation: 'localstorage',
-        useRefreshTokens: true,
-        useRefreshTokensFallback: true,
-        authorizationParams: {
-            audience: config.audience,
-            redirect_uri: window.location.origin + "/account"
-        }
-    });
-
-    // CRITICAL: Expose to window for other scripts (roleplay.js, app.js)
-    window.auth0Client = auth0Client;
-};
-
-let settingsListenersBound = false;
-
-const getSettingsElements = () => {
-    return {
-        emailToggle: document.getElementById('notif-toggle'),
-        timerToggle: document.getElementById('timer-sounds-toggle'),
-        saveBtn: document.getElementById('save-settings-btn')
-    };
-};
-
-const setSettingsEnabled = (enabled) => {
-    const { emailToggle, timerToggle, saveBtn } = getSettingsElements();
-    if (emailToggle) emailToggle.disabled = !enabled;
-    if (timerToggle) timerToggle.disabled = !enabled;
-    if (saveBtn) saveBtn.disabled = !enabled;
-};
-
-const apiRequest = async (path, options = {}) => {
-    const token = await auth0Client.getTokenSilently();
-    const headers = {
-        Authorization: `Bearer ${token}`,
-        ...(options.headers || {})
-    };
-
-    if (options.body) {
-        headers['Content-Type'] = 'application/json';
-    }
-
-    return fetch(path, {
-        ...options,
-        headers
-    });
-};
-
-const showStatus = (message, isError = false) => {
-    const statusEl = document.getElementById('settings-status');
-    if (!statusEl) return;
-    
-    statusEl.textContent = message;
-    statusEl.className = `text-sm font-medium transition-opacity duration-300 ${isError ? 'text-red-500' : 'text-emerald-500'}`;
-    statusEl.style.opacity = '1';
-    
-    setTimeout(() => {
-        statusEl.style.opacity = '0';
-    }, 3000);
-};
-
-const loadSettings = async () => {
+// Initialize Auth
+export const initAuth = async () => {
     try {
-        const response = await apiRequest('/api/user-settings');
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            console.warn('Failed to load settings:', errData.message || 'Server error');
-            return;
-        }
+        currentUser = await account.get();
+        console.log('User authenticated:', currentUser);
+        updateUI(true, currentUser);
+        window.dispatchEvent(new CustomEvent('auth-initialized', { detail: currentUser }));
+        
+        // Load settings if available
+        if (window.loadSettings) await window.loadSettings();
 
-        const data = await response.json();
-        window.userSettings = {
-            emailNotifications: data.emailNotifications ?? true,
-            timerAlerts: data.timerAlerts ?? true
-        };
+        // Bind account page buttons if we are on account page
+        bindAccountPageEvents();
 
-        const { emailToggle, timerToggle } = getSettingsElements();
-        if (emailToggle) emailToggle.checked = Boolean(window.userSettings.emailNotifications);
-        if (timerToggle) timerToggle.checked = Boolean(window.userSettings.timerAlerts);
-    } catch (error) {
-        console.error('Settings load error:', error);
-        showStatus('Error loading settings', true);
+    } catch (e) {
+        // Not logged in
+        console.log('User not logged in');
+        updateUI(false);
+        window.dispatchEvent(new CustomEvent('auth-initialized', { detail: null }));
     }
+    return currentUser;
 };
 
-const saveSettings = async () => {
-    const { emailToggle, timerToggle, saveBtn } = getSettingsElements();
-    if (!emailToggle || !timerToggle) return;
-
-    window.userSettings = {
-        emailNotifications: emailToggle.checked,
-        timerAlerts: timerToggle.checked
-    };
-
-    if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving...';
-    }
-
-    showStatus('Saving...');
+export const login = async () => {
     try {
-        const response = await apiRequest('/api/user-settings', {
-            method: 'POST',
-            body: JSON.stringify(window.userSettings)
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.message || 'Failed to save settings');
-        }
-        showStatus('Settings saved');
-    } catch (error) {
-        console.error('Settings save error:', error);
-        showStatus('Error saving settings', true);
-    } finally {
-        if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save Changes';
-        }
+        await account.createOAuth2Session(
+            OAuthProvider.Google,
+            window.location.href, 
+            window.location.href
+        );
+    } catch (e) {
+        console.error('Login failed:', e);
+        alert('Login failed. Please try again.');
     }
 };
 
-const bindSettingsListeners = () => {
-    if (settingsListenersBound) return;
-
-    const { saveBtn } = getSettingsElements();
-    if (!saveBtn) return;
-
-    saveBtn.addEventListener('click', saveSettings);
-    settingsListenersBound = true;
+export const logout = async () => {
+    try {
+        await account.deleteSession('current');
+        currentUser = null;
+        updateUI(false);
+        window.userSettings = null;
+        window.location.reload();
+    } catch (e) {
+        console.error('Logout failed:', e);
+    }
 };
 
-const updateUI = async () => {
-    const isAuthenticated = await auth0Client.isAuthenticated();
-    const btn = document.getElementById("google-signin-btn");
-    
+const updateUI = (isAuthenticated, user) => {
+    const btn = document.getElementById('google-signin-btn');
     if (!btn) return;
 
-    // Clone button to remove old event listeners
     const newBtn = btn.cloneNode(true);
     btn.parentNode.replaceChild(newBtn, btn);
 
     if (isAuthenticated) {
-        const user = await auth0Client.getUser();
-        newBtn.innerHTML = `<span>Sign Out (${user.name || user.email})</span>`;
+        newBtn.innerHTML = `<span>Sign Out (${user.name})</span>`;
         newBtn.onclick = logout;
-        setSettingsEnabled(true);
-        await loadSettings();
-        bindSettingsListeners();
     } else {
         newBtn.innerHTML = `
         <svg class="h-6 w-6" viewBox="0 0 24 24">
@@ -179,80 +75,186 @@ const updateUI = async () => {
         </svg>
         <span>Sign in with Google</span>`;
         newBtn.onclick = login;
-        setSettingsEnabled(false);
-        
-        // Check if configuration is missing
-        if (fetchAuthConfig().clientId === "YOUR_AUTH0_CLIENT_ID") {
-            newBtn.innerHTML = "<span>Config Error: Generic Client ID</span>";
-            newBtn.onclick = () => alert("Please update auth.js with your Auth0 Client ID");
-        }
     }
 };
 
-const login = async () => {
-    try {
-        const config = fetchAuthConfig();
-        await auth0Client.loginWithRedirect({
-            authorizationParams: {
-                connection: 'google-oauth2',
-                audience: config.audience
+const bindAccountPageEvents = () => {
+    // Only proceed if we are on the account page
+    const saveBtn = document.getElementById('save-settings-btn');
+    if (!saveBtn) return;
+
+    // 1. Save Button
+    saveBtn.onclick = async () => {
+        const notif = document.getElementById('notif-toggle').checked;
+        const timer = document.getElementById('timer-sounds-toggle').checked;
+        const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+        
+        saveBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+
+        const newSettings = {
+            ...window.userSettings,
+            notifications: notif,
+            timerAlerts: timer,
+            theme: theme 
+        };
+
+        const success = await saveSettings(newSettings);
+        
+        saveBtn.textContent = success ? 'Saved!' : 'Error';
+        setTimeout(() => {
+            saveBtn.textContent = 'Save Changes';
+            saveBtn.disabled = false;
+        }, 2000);
+    };
+
+    // 2. Delete Account Button
+    const deleteBtn = document.getElementById('delete-account-btn');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+            if (confirm('Are you sure you want to reset your account profile? This will delete all your study history and preferences. This cannot be undone.')) {
+                try {
+                    deleteBtn.textContent = 'Deleting...';
+                    deleteBtn.disabled = true;
+
+                    // Delete User Profile Document
+                    await databases.deleteDocument(DB_ID, COLLECTION_USERS, currentUser.$id);
+                    
+                    // Clear Cache
+                    SmartCache.invalidate(`settings_${currentUser.$id}`);
+                    SmartCache.invalidate(`history_${currentUser.$id}`);
+                    
+                    window.userSettings = {};
+                    alert('Your profile and history have been reset.');
+                    window.location.reload();
+                } catch (e) {
+                    console.error('Delete failed:', e);
+                    alert('Failed to delete profile. Please try again.');
+                    deleteBtn.textContent = 'Confirm Deletion';
+                    deleteBtn.disabled = false;
+                }
             }
-        });
-    } catch(e) {
-        console.error("Login Error:", e);
-        alert("Login failed. See console for details.");
+        };
     }
 };
 
-const logout = () => {
-    // Clear user cache on logout
-    if (typeof MoStudyCache !== 'undefined' && MoStudyCache.clearUserCache) {
-        MoStudyCache.clearUserCache();
-    }
-    
-    auth0Client.logout({
-        logoutParams: {
-            returnTo: window.location.origin + "/account"
-        }
-    });
-};
+// --- Settings Management ---
 
-// Initialize
-const initAuth = async () => {
-    if (window.authInitializing) return;
-    window.authInitializing = true;
+export const loadSettings = async () => {
+    if (!currentUser) return;
     
     try {
-        await configureClient();
-        
-        // Check for callback
-        const query = window.location.search;
-        if (query.includes("code=") && query.includes("state=")) {
+        const fetchSettings = async () => {
             try {
-                await auth0Client.handleRedirectCallback();
-                window.history.replaceState({}, document.title, "/account");
+                const doc = await databases.getDocument(
+                    DB_ID,
+                    COLLECTION_USERS,
+                    currentUser.$id
+                );
+                return doc.preferences ? JSON.parse(doc.preferences) : {};
             } catch (e) {
-                console.error("Callback Error:", e);
+                if (e.code === 404) {
+                    // Create if missing
+                    await databases.createDocument(
+                        DB_ID,
+                        COLLECTION_USERS,
+                        currentUser.$id,
+                        {
+                            user_id: currentUser.$id,
+                            display_name: currentUser.name,
+                            history: '[]',
+                            preferences: '{}'
+                        }
+                    );
+                    return {};
+                }
+                throw e;
             }
-        }
+        };
+
+        // Use SmartCache: key = "settings_{userId}"
+        const cacheKey = `settings_${currentUser.$id}`;
+        const settings = await SmartCache.get(cacheKey, fetchSettings);
         
-        await updateUI();
+        window.userSettings = settings;
+        applySettings(settings);
+        window.dispatchEvent(new CustomEvent('settings-loaded', { detail: settings }));
+        
     } catch (e) {
-        console.error("Critical Auth Initialization Error:", e);
-    } finally {
-        window.authInitialized = true;
-        window.dispatchEvent(new CustomEvent('auth-initialized'));
-        console.log("Auth initialization complete");
+        console.error('Failed to load settings:', e);
     }
 };
 
+export const saveSettings = async (newSettings) => {
+    if (!currentUser) return;
+    
+    // 1. Optimistic Update via Cache
+    const cacheKey = `settings_${currentUser.$id}`;
+    SmartCache.update(cacheKey, newSettings);
+    
+    // 2. Apply locally immediately
+    window.userSettings = newSettings;
+    applySettings(newSettings);
+
+    // 3. Persist to Backend
+    try {
+        const settingsStr = JSON.stringify(newSettings);
+        await databases.updateDocument(
+            DB_ID,
+            COLLECTION_USERS,
+            currentUser.$id,
+            { preferences: settingsStr }
+        );
+        return true;
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+        // We could revert cache here if needed, but for settings loose consistency is usually fine
+        return false;
+    }
+};
+
+// Listen for background updates from cache
+window.addEventListener('cache-updated', (e) => {
+    if (currentUser && e.detail.key === `settings_${currentUser.$id}`) {
+        console.log('Received background settings update', e.detail.data);
+        window.userSettings = e.detail.data;
+        applySettings(e.detail.data);
+    }
+});
+
+const applySettings = (settings) => {
+    if (window.applyTheme) window.applyTheme(settings.theme || 'light');
+    
+    const notifToggle = document.getElementById('notif-toggle');
+    if (notifToggle && typeof settings.notifications !== 'undefined') {
+        notifToggle.checked = settings.notifications;
+    }
+    
+    const timerToggle = document.getElementById('timer-sounds-toggle');
+    if (timerToggle && typeof settings.timerAlerts !== 'undefined') {
+        timerToggle.checked = settings.timerAlerts;
+    }
+};
+
+// Initialize on load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initAuth);
 } else {
     initAuth();
 }
 
-// Expose auth functions to window for UI usage
+// Expose to window for other scripts
 window.login = login;
 window.logout = logout;
-window.auth0Client = auth0Client; // Ensure client is accessible
+window.initAuth = initAuth;
+window.loadSettings = loadSettings;
+window.saveSettings = saveSettings;
+window.authInitialized = true; 
+window.getCurrentUser = () => currentUser;
+
+// Dummy auth0Client for compatibility
+window.auth0Client = {
+    isAuthenticated: async () => !!currentUser,
+    getTokenSilently: async () => 'session-managed-by-appwrite',
+    getUser: async () => currentUser
+};

@@ -3,9 +3,17 @@
  * Interactive FBLA role play practice with AI-generated scenarios and judging
  */
 
+// Import Appwrite config
+import { databases, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
+import { ID } from 'appwrite';
+
 // ==================== CONFIGURATION ====================
 
-const AI_API_ENDPOINT = "/api/ai/chat";
+// Set to true to use local mock responses instead of real AI (for MVP/Offline)
+const USE_DUMMY_AI = true;
+
+const AI_API_ENDPOINT = "/api/ai/chat"; // Legacy endpoint, overriden by dummy mode
+
 // Updated to Google Gemini 3 Flash Preview as requested
 const AI_MODEL = "google/gemini-3-flash-preview";
 
@@ -409,16 +417,9 @@ async function getAuthToken() {
 }
 
 /**
- * Save roleplay report to Firestore via the backend API.
- * Updates the local cache with the returned data.
+ * Save roleplay report to Appwrite.
  */
 async function saveRoleplayReport(totalScore, judgeResults) {
-    // Only save if cache helper is available
-    if (typeof MoStudyCache === 'undefined') {
-        console.warn('Cache helper not available, skipping roleplay report save');
-        return;
-    }
-
     try {
         // Build category scores from judge evaluations
         const categoryScores = {};
@@ -433,15 +434,23 @@ async function saveRoleplayReport(totalScore, judgeResults) {
             }
         });
 
+        // Ensure categoryScores is stringified for the 'details' field (which is typically a string in Appwrite DBs unless configured as JSON)
+        // Based on the schema I inferred, 'details' might be a string. Safer to stringify.
         const reportData = {
+            type: 'roleplay',
             event: appState.currentEvent?.title || 'Unknown',
-            difficulty: 'official',
-            judgeScore: totalScore,
-            categoryScores
+            score: totalScore,
+            details: JSON.stringify(categoryScores),
+            timestamp: new Date().toISOString()
         };
 
-        await MoStudyCache.saveReportAndUpdateCache(getAuthToken, 'roleplay', reportData);
-        console.log('Roleplay report saved successfully');
+        await databases.createDocument(
+            DB_ID,
+            COLLECTION_HISTORY,
+            ID.unique(),
+            reportData
+        );
+        console.log('Roleplay report saved successfully to Appwrite');
     } catch (error) {
         console.error('Failed to save roleplay report:', error);
         // Non-blocking - user can still see results
@@ -2996,6 +3005,86 @@ function startNewSession() {
 // ==================== UTILITY FUNCTIONS ====================
 
 async function callAI(messages, expectJson = false, options = {}) {
+    // --- DUMMY MODE FOR MVP ---
+    if (USE_DUMMY_AI) {
+        console.log('[AI-DUMMY] Intercepting AI call (Mock Mode)');
+        await new Promise(r => setTimeout(r, 2000)); // Simulate network
+
+        // 1. SCENARIO GENERATION
+        if (!expectJson && messages.some(m => m.content.includes && m.content.includes("Create a NEW scenario"))) {
+            return `**PARTICIPANT INSTRUCTIONS**
+You have 20 minutes to review the scenario and 7 minutes to present.
+
+**PERFORMANCE INDICATORS**
+- Explain the impact of geography on international business
+- Identify risks and rewards of a foreign market
+- Illustrate how cultural factors influence consumer behavior
+
+**BACKGROUND INFORMATION**
+TechNova is a leading US-based software company specializing in cloud/AI solutions for retail logistics. After dominating the domestic market, the Board has decided to expand internationally.
+
+**SCENARIO**
+The Board has selected **Japan** as the next target market due to its high tech adoption. However, Japan's business culture is vastly different from the US. You are the International Development Manager. You must present a market entry strategy that respects local customs while maintaining the company's aggressive growth targets.
+
+**OTHER USEFUL INFORMATION**
+- Japan has strict data privacy laws.
+- Business relationships in Japan are built on long-term trust (relationship-based).
+- Competitors in Japan are deeply entrenched.
+
+**OBJECTIVES / REQUIREMENTS**
+- Develop a culturally appropriate entry strategy.
+- Address potential regulatory hurdles (data privacy).
+- Outline a timeline for the first 12 months.`;
+        }
+
+        // 2. Q&A GENERATION
+        if (expectJson && messages.some(m => m.content.includes && m.content.includes("generate exactly 2 follow-up questions"))) {
+            return JSON.stringify([
+                "How will you handle specific cultural missteps if your team accidentally offends a potential Japanese partner?",
+                "What budget allocation do you propose for the initial 6 months versus the second 6 months?"
+            ]);
+        }
+
+        // 3. JUDGING
+        if (expectJson && messages.some(m => m.role === 'system' && m.content.includes("You are an expert FBLA judge"))) {
+            // Return a realistic score
+            const isQARound = messages.some(m => m.content && typeof m.content === 'object' && JSON.stringify(m.content).includes('Q&A'));
+            const baseScore = 8 + Math.floor(Math.random() * 2);
+            
+            return JSON.stringify({
+                scores: {
+                    understanding: baseScore,
+                    alternatives: baseScore * 2,
+                    solution: baseScore * 2,
+                    knowledge: baseScore * 2,
+                    organization: baseScore,
+                    delivery: baseScore,
+                    questions: baseScore
+                },
+                total: baseScore * 10,
+                overallFeedback: "Strong presentation with clear points. You addressed the cultural aspects well, though more specific financial details would have strengthened your proposal.",
+                categoryFeedback: {
+                    understanding: "Good grasp of the core conflict.",
+                    alternatives: "Presented viable options.",
+                    solution: "Logical conclusion.",
+                    knowledge: "Demonstrated good vocabulary.",
+                    organization: "Easy to follow.",
+                    delivery: "Confident tone.",
+                    questions: "Answered directly."
+                },
+                strengthHighlight: "Cultural Awareness",
+                improvementArea: "Financial Specifics",
+                personalizedFeedback: "I liked how you mentioned the relationship-building aspect explicitly.",
+                actionableTips: ["Include a specific budget slide next time.", "Slow down slightly during key points."]
+            });
+        }
+        
+        // Fallback
+        if (expectJson) return "{}";
+        return "Simulation complete.";
+    }
+    // --- END DUMMY MODE ---
+
     const jsonType = options.jsonType || (expectJson ? 'object' : null);
     const callId = Math.random().toString(36).substring(7).toUpperCase();
     const requestTimestamp = new Date().toISOString();

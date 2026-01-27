@@ -25,17 +25,22 @@ function applyTheme(mode) {
 
     if (mode === THEME_LIGHT) {
         DarkReader.disable();
+        document.documentElement.classList.remove('dark');
     } else {
         DarkReader.enable({
             brightness: 100,
             contrast: 90,
             sepia: 10
         });
+        document.documentElement.classList.add('dark');
     }
 
     localStorage.setItem(THEME_STORAGE_KEY, mode);
     updateThemeToggle(mode);
 }
+
+// Global expose for auth.js to call
+window.applyTheme = applyTheme;
 
 function initThemeToggle() {
     if (typeof DarkReader === "undefined") return;
@@ -49,6 +54,8 @@ function initThemeToggle() {
     toggle.addEventListener("click", () => {
         const nextMode = getStoredTheme() === THEME_DARK ? THEME_LIGHT : THEME_DARK;
         applyTheme(nextMode);
+        // If we also track settings globally, update user preference object if present for unsaved state
+        if (window.userSettings) { window.userSettings.theme = nextMode; }
     });
 }
 

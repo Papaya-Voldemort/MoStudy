@@ -1,0 +1,49 @@
+{
+    "projectId": "YOUR_PROJECT_ID",
+    "projectName": "MoStudy",
+    "functions": [
+        {
+            "$id": "ai-review",
+            "name": "AI Review",
+            "runtime": "node-18.0",
+            "path": "functions/ai-review",
+            "entrypoint": "src/main.js",
+            "ignore": [
+                "node_modules",
+                ".gitignore"
+            ],
+            "execute": ["users"],
+            "events": [],
+            "schedule": "",
+            "timeout": 15
+        }
+    ],
+    "databases": [
+        {
+            "$id": "mostudy",
+            "name": "MoStudy Database"
+        }
+    ],
+    "collections": [
+        {
+            "$id": "user_profiles",
+            "databaseId": "mostudy",
+            "name": "User Profiles",
+            "permissions": [
+                "read(\"users\")",
+                "create(\"users\")",
+                "update(\"users\")"
+            ]
+        },
+        {
+            "$id": "quiz_history",
+            "databaseId": "mostudy",
+            "name": "Quiz History",
+            "permissions": [
+                "read(\"users\")",
+                "create(\"users\")",
+                "update(\"users\")"
+            ]
+        }
+    ]
+}
