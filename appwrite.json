@@ -3,19 +3,21 @@
     "projectName": "MoStudy",
     "functions": [
         {
-            "$id": "ai-review",
-            "name": "AI Review",
+            "$id": "ai-chat",
+            "name": "AI Chat",
             "runtime": "node-18.0",
-            "path": "functions/ai-review",
+            "path": "functions/ai-chat",
             "entrypoint": "src/main.js",
             "ignore": [
                 "node_modules",
                 ".gitignore"
             ],
-            "execute": ["users"],
+            "execute": [
+                "users"
+            ],
             "events": [],
             "schedule": "",
-            "timeout": 15
+            "timeout": 900
         }
     ],
     "databases": [

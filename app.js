@@ -927,39 +927,53 @@ async function generateAIReview_OLD() {
     const postToAI = async (messages) => {
         const requestBody = {
             messages,
-            temperature: 0
+            temperature: 0,
+            model: "google/gemini-3-flash-preview" // Use Gemini 3 Flash Preview
         };
 
         // Retry with exponential backoff on 429s
         const maxRetries = 3;
-        let response;
+        let execution;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            const token = await getAuthToken();
-            const headers = { "Content-Type": "application/json" };
-            if (token) {
-                headers["Authorization"] = `Bearer ${token}`;
+            try {
+                // Call Appwrite AI chat function (consolidated)
+                execution = await functions.createExecution(
+                    'ai-chat', // Function ID
+                    JSON.stringify(requestBody),
+                    false, // async = false (wait for response)
+                    '/', // path
+                    ExecutionMethod.POST,
+                    { 'Content-Type': 'application/json' }
+                );
+
+                // Check status code
+                if (execution.responseStatusCode === 429) {
+                    if (attempt < maxRetries) {
+                        const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+                        await sleep(backoffMs);
+                        continue;
+                    }
+                }
+
+                break; // Success or non-retryable error
+            } catch (err) {
+                if (attempt === maxRetries) throw err;
+                const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+                await sleep(backoffMs);
             }
-
-            response = await fetch("/api/ai/review", {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify(requestBody)
-            });
-
-            if (response.status !== 429) break;
-            const backoffMs = Math.min(8000, 1000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
-            await sleep(backoffMs);
         }
 
-        const rawText = await response.text();
-        if (response.status === 401 || response.status === 403) {
+        const rawText = execution.responseBody;
+        
+        // Handle error responses
+        if (execution.status !== 'completed' || (execution.responseStatusCode !== 200 && execution.responseStatusCode !== 201)) {
             const data = safeJsonParse(rawText);
-            const msg = data?.message || data?.error || "Sign in to view AI feedback (403).";
-            throw new Error(msg);
-        }
-        if (!response.ok) {
+            if (execution.responseStatusCode === 401 || execution.responseStatusCode === 403) {
+                const msg = data?.message || data?.error || "Sign in to view AI feedback (403).";
+                throw new Error(msg);
+            }
             const snippet = rawText ? rawText.slice(0, 180) : "";
-            throw new Error(`API request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`);
+            throw new Error(`Function failed with status ${execution.responseStatusCode}${snippet ? `: ${snippet}` : ''}`);
         }
 
         const data = safeJsonParse(rawText);

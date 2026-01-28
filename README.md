@@ -1,10 +1,11 @@
-# MoTest - FBLA Practice Exams
+# MoStudy - FBLA Practice Platform
 
-A web-based practice exam platform for FBLA (Future Business Leaders of America) competitive events. MoTest provides interactive, timed exams with instant feedback and comprehensive review capabilities.
+A comprehensive web-based practice platform for FBLA (Future Business Leaders of America) competitive events, featuring AI-powered study assistance and interactive roleplay scenarios.
 
-## Features
+## ✨ Features
 
-- **10 Practice Exam Categories** covering various FBLA competitive events:
+### 📝 Practice Exams
+- **10 Exam Categories** covering FBLA competitive events:
   - Computer Problem Solving
   - Cybersecurity
   - Introduction to Information Technology
@@ -16,63 +17,122 @@ A web-based practice exam platform for FBLA (Future Business Leaders of America)
   - Data Science & AI
   - International Business
 
-- **Interactive Exam Interface**
-  - Timed exams with countdown timer
-  - Multiple-choice questions with immediate feedback
-  - Question navigation and progress tracking
-  - Flag questions for review
-  - Responsive design for desktop and mobile
+### 🎭 Interactive Roleplay
+- AI-generated FBLA International Business roleplay scenarios
+- Real-time presentation recording and evaluation
+- AI judging with detailed feedback
+- Q&A practice with scoring
 
-- **Dark Mode Support**
-  - Automatic theme detection
-  - Manual theme toggle
-  - Optimized color scheme for comfortable studying
+### 🤖 AI-Powered Features
+- **Smart Study Reviews** - AI analyzes your quiz performance
+- **Personalized Feedback** - Get insights on strengths and areas to improve
+- **Scenario Generation** - Practice with realistic business scenarios
+- **Secure & Free** - Using Hack Club AI (free for teens 18 and under)
 
-- **Comprehensive Review Tools**
-  - Answer review screen with correct/incorrect indicators
-  - Detailed score breakdown
-  - Performance analytics
-  - Flagged question tracking
+### 🎨 User Experience
+- Dark mode support with automatic detection
+- Responsive design for desktop and mobile
+- Timed exams with countdown timer
+- Question flagging and navigation
+- Comprehensive answer review
 
-- **Custom Test Uploads**
-  - Import custom exam questions via JSON
-  - Flexible format for educational content creators
-
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
-No installation required! MoTest runs entirely in the browser with no backend dependencies.
+- Appwrite account (for backend services)
+- Hack Club AI API key (get at [ai.hackclub.com/dashboard](https://ai.hackclub.com/dashboard))
+- Node.js 18+ (for Appwrite CLI)
 
-### Running Locally
+### Quick Start
 
-1. Clone the repository:
+1. **Clone the repository**:
 ```bash
 git clone <repository-url>
-cd MoLearn-Beta
+cd MoStudy
 ```
 
-2. Open in a web server (required for proper file loading):
+2. **Deploy AI Functions**:
 ```bash
-# Using Python 3
-python -m http.server 8000
+./deploy-ai-functions.sh
+```
+Follow the prompts to set up your Hack Club AI key.
 
-# Or using Node.js http-server
+3. **Run locally**:
+```bash
 npx http-server
 ```
 
-3. Open your browser and navigate to `http://localhost:8000`
+4. Open `http://localhost:8080` in your browser.
 
-## Project Structure
+For detailed deployment instructions, see [QUICKSTART.md](QUICKSTART.md).
+
+## 📁 Project Structure
 
 ```
-├── index.html           # Main application page
-├── app.js              # Core application logic
-├── styles.css          # Theme and styling
-├── data/               # Test question data
-│   ├── *.json          # Test question files
-│   └── example-tests/  # Sample questions for reference
-└── README.md           # This file
+├── index.html              # Main application page
+├── app.js                  # Quiz logic and AI review
+├── roleplay.js            # AI roleplay scenarios
+├── styles.css             # Theme and styling
+├── auth.js                # Authentication
+├── nav.js                 # Navigation
+├── theme.js               # Dark mode
+├── functions/             # Appwrite AI Functions
+│   ├── ai-chat/          # General AI chat (roleplay)
+│   └── ai-review/        # Study review AI
+├── lib/                   # Shared libraries
+│   ├── appwrite.js       # Appwrite SDK config
+│   └── cache.js          # Smart caching
+├── data/                  # Test question data
+│   ├── *.json            # Test questions
+│   └── roleplay/         # Roleplay scenarios
+├── DEPLOYMENT.md          # Deployment guide
+├── QUICKSTART.md          # Quick start guide
+└── MIGRATION-SUMMARY.md   # AI migration details
 ```
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Set these in your Appwrite Functions (via Console or CLI):
+
+```bash
+HACK_CLUB_AI_KEY=your-api-key-here
+```
+
+See [.env.example](.env.example) for reference.
+
+### Appwrite Setup
+
+The project uses Appwrite for:
+- **Authentication** - User accounts and sessions
+- **Database** - Quiz history and user profiles
+- **Functions** - Secure AI API proxy
+
+Configuration in [appwrite.json](appwrite.json).
+
+## 🤖 AI Implementation
+
+### Architecture
+
+```
+Browser → Appwrite Auth → Appwrite Functions → Hack Club AI
+                          (API Keys Secure)
+```
+
+### Functions
+
+- **ai-chat** - Roleplay scenarios, AI judging
+- **ai-review** - Quiz analysis, study feedback
+
+See [functions/README.md](functions/README.md) for details.
+
+### Security
+
+✅ API keys stored server-side only  
+✅ Authentication required  
+✅ Rate limiting included  
+✅ Automatic retry logic
 
 ## JSON Test Format
 
@@ -100,68 +160,117 @@ Custom tests should follow this JSON structure:
 }
 ```
 
-## Browser Compatibility
+## 📖 Documentation
+
+- **[QUICKSTART.md](QUICKSTART.md)** - Quick deployment guide
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment instructions
+- **[MIGRATION-SUMMARY.md](MIGRATION-SUMMARY.md)** - AI implementation details
+- **[functions/README.md](functions/README.md)** - Functions architecture
+- **[AI-API-DOCUMENTATION.md](AI-API-DOCUMENTATION.md)** - Legacy API docs (historical)
+
+## 🛠️ Development
+
+### Local Development
+
+```bash
+# Run local server
+npx http-server
+
+# Or with Python
+python -m http.server 8080
+```
+
+### Testing Functions Locally
+
+```bash
+# Test ai-chat
+appwrite functions createExecution \
+  --functionId ai-chat \
+  --data '{"messages":[{"role":"user","content":"Hello!"}]}'
+
+# Test ai-review
+appwrite functions createExecution \
+  --functionId ai-review \
+  --data '{"messages":[{"role":"user","content":"Review: 2+2=4"}]}'
+```
+
+### Deploying Changes
+
+```bash
+# Deploy specific function
+appwrite deploy function --functionId ai-chat
+
+# Deploy all functions
+appwrite deploy function
+```
+
+## 🎨 Customization
+
+### Adding New Tests
+1. Create JSON file in `data/` directory
+2. Follow format in existing tests
+3. Add entry to catalog in [app.js](app.js)
+
+### Styling
+- Built with Tailwind CSS
+- Custom variables in [styles.css](styles.css)
+- Dark mode theme in [theme.js](theme.js)
+
+## 📊 Features in Detail
+
+### AI Study Review
+After completing a quiz, get:
+- Overall performance analysis
+- Per-question explanations
+- Study recommendations
+- Strength/weakness identification
+
+### Roleplay Scenarios
+Practice FBLA International Business with:
+- Randomized scenarios from diverse industries
+- 20-minute planning time
+- 7-minute presentation recording
+- AI judging with detailed rubric
+- Q&A round with scoring
+
+### Smart Caching
+- Reduces redundant AI calls
+- Speeds up repeat scenarios
+- Configurable cache duration
+
+## 🔐 Security
+
+- API keys stored server-side only
+- Authentication required for AI features
+- Rate limiting per user
+- Input validation and sanitization
+
+## 🌐 Browser Compatibility
 
 - Chrome/Edge 90+
 - Firefox 88+
 - Safari 14+
-- Mobile browsers (iOS Safari, Chrome Mobile)
+- Mobile browsers supported
 
-## Features in Detail
-
-### Timed Exams
-Each exam has a configurable time limit. The timer displays prominently and provides warnings as time runs low.
-
-### Answer Tracking
-All answers are tracked throughout the exam session, allowing students to review their responses before submitting.
-
-### Review Mode
-After completing an exam, students can review all questions, see which they answered correctly, and read explanations.
-
-### Flagging
-Important or difficult questions can be flagged for quick review before submission.
-
-## Customization
-
-### Adding New Tests
-1. Create a JSON file with your test questions following the format above
-2. Place it in the `data/` directory
-3. Add an entry to the catalog in [app.js](app.js) with the test details
-
-### Styling
-The application uses Tailwind CSS and custom CSS variables. Edit [styles.css](styles.css) to customize colors and fonts.
-
-### Theme Colors
-Modify the CSS variables in `styles.css` to change the overall appearance:
-- `--color-primary`: Primary brand color
-- `--color-bg`: Background color
-- `--color-text`: Text color
-
-## Development
-
-The application is built with vanilla JavaScript, requiring no build step or dependencies. Simply edit the source files and refresh your browser.
-
-### Key Files
-- [app.js](app.js): Main application with all quiz logic
-- [index.html](index.html): HTML structure
-- [styles.css](styles.css): Styling and theme variables
-
-## Contributing
-
-Contributions are welcome! Feel free to:
-- Add new test questions
-- Improve the UI/UX
-- Fix bugs
-- Optimize performance
-
-## License
+## 📝 License
 
 [Add appropriate license]
 
-## Support
+## 🤝 Contributing
 
-For issues, questions, or suggestions, please open an issue on the repository.
+Contributions welcome! Areas to help:
+- Add more practice questions
+- Improve AI prompts
+- Enhance UI/UX
+- Fix bugs
+- Add new features
+
+## 💬 Support
+
+- **Issues**: Open an issue on GitHub
+- **Hack Club AI**: https://ai.hackclub.com/docs
+- **Appwrite**: https://appwrite.io/docs
 
 ---
 
-Built with ❤️ for FBLA students and educators
+Built with ❤️ for FBLA students using [Hack Club AI](https://ai.hackclub.com)

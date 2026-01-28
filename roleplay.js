@@ -4,17 +4,18 @@
  */
 
 // Import Appwrite config
-import { databases, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
-import { ID } from 'appwrite';
+import { databases, functions, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
+import { ID, ExecutionMethod } from 'appwrite';
 
 // ==================== CONFIGURATION ====================
 
 // Set to true to use local mock responses instead of real AI (for MVP/Offline)
 const USE_DUMMY_AI = true;
 
-const AI_API_ENDPOINT = "/api/ai/chat"; // Legacy endpoint, overriden by dummy mode
+// Appwrite function ID for AI chat (deployed via appwrite.json)
+const AI_FUNCTION_ID = "ai-chat";
 
-// Updated to Google Gemini 3 Flash Preview as requested
+// Use Google Gemini 3 Flash Preview (for everything)
 const AI_MODEL = "google/gemini-3-flash-preview";
 
 // Prompt tuning: examples improve formatting/realism, but large prompts slow responses.
@@ -3099,14 +3100,13 @@ The Board has selected **Japan** as the next target market due to its high tech 
 
     // Log request details
     console.log(`[AI-CALL-${callId}] REQUEST START at ${requestTimestamp}`, {
-        endpoint: AI_API_ENDPOINT,
+        functionId: AI_FUNCTION_ID,
         model: AI_MODEL,
         expectJson,
         jsonType,
         messagesCount: messages.length,
         firstMessageRole: messages[0]?.role,
-        temperature: requestBody.temperature,
-        hasToken: !!(await getAuthToken())
+        temperature: requestBody.temperature
     });
 
     // Log message content preview
@@ -3127,56 +3127,53 @@ The Board has selected **Japan** as the next target market due to its high tech 
         try {
             console.log(`[AI-CALL-${callId}] ATTEMPT ${attempt + 1}/${maxRetries + 1} at ${attemptTimestamp}`);
 
-            const token = await getAuthToken();
-            const headers = { "Content-Type": "application/json" };
-            if (token) {
-                headers["Authorization"] = `Bearer ${token}`;
-                console.log(`[AI-CALL-${callId}] Using authentication token (length: ${token.length})`);
-            } else {
-                console.log(`[AI-CALL-${callId}] No auth token available, proceeding without authentication`);
-            }
-
-            console.log(`[AI-CALL-${callId}] Sending request to ${AI_API_ENDPOINT}`);
-            const response = await fetch(AI_API_ENDPOINT, {
-                method: "POST",
-                headers: headers,
-                body: JSON.stringify(requestBody)
-            });
+            console.log(`[AI-CALL-${callId}] Calling Appwrite function: ${AI_FUNCTION_ID}`);
+            
+            // Call Appwrite function instead of direct API call
+            const execution = await functions.createExecution(
+                AI_FUNCTION_ID,
+                JSON.stringify(requestBody),
+                false, // async = false (wait for response)
+                '/', // path
+                ExecutionMethod.POST,
+                { 'Content-Type': 'application/json' }
+            );
 
             const responseTime = new Date().toISOString();
-            console.log(`[AI-CALL-${callId}] Response received at ${responseTime}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                contentType: response.headers.get('content-type')
+            console.log(`[AI-CALL-${callId}] Function execution completed at ${responseTime}:`, {
+                status: execution.status,
+                statusCode: execution.responseStatusCode,
+                duration: execution.duration
             });
 
-            // If rate limited, retry with backoff
-            if (response.status === 429) {
-                if (attempt < maxRetries) {
-                    const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-                    console.warn(`[AI-CALL-${callId}] Rate limit hit (429). Retrying in ${backoffMs}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, backoffMs));
-                    continue;
-                }
-            }
+            // Check if execution was successful
+            if (execution.status !== 'completed' || execution.responseStatusCode !== 200) {
+                const errorData = JSON.parse(execution.responseBody || '{}');
+                const msg = errorData.error || errorData.message || 'Function execution failed';
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const msg = errorData.message || errorData.error || response.statusText;
-
-                console.error(`[AI-CALL-${callId}] ERROR Response (Status ${response.status}):`, {
+                console.error(`[AI-CALL-${callId}] ERROR Response (Status ${execution.responseStatusCode}):`, {
                     message: msg,
                     fullError: errorData,
-                    responseSize: response.headers.get('content-length')
+                    status: execution.status
                 });
 
-                if (response.status === 401 || response.status === 403) {
-                    throw new Error(`${msg || 'Authentication failed'} (Status ${response.status})`);
+                // Handle rate limits
+                if (execution.responseStatusCode === 429) {
+                    if (attempt < maxRetries) {
+                        const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+                        console.warn(`[AI-CALL-${callId}] Rate limit hit (429). Retrying in ${backoffMs}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, backoffMs));
+                        continue;
+                    }
                 }
-                throw new Error(`API error (${response.status}): ${msg}`);
+
+                if (execution.responseStatusCode === 401 || execution.responseStatusCode === 403) {
+                    throw new Error(`${msg || 'Authentication failed'} (Status ${execution.responseStatusCode})`);
+                }
+                throw new Error(`Function error (${execution.responseStatusCode}): ${msg}`);
             }
 
-            const data = await response.json();
+            const data = JSON.parse(execution.responseBody);
 
             // Handle response format
             if (data.choices && data.choices[0]?.message?.content) {
