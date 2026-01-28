@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "dev": "npx serve ."
+    "dev": "npx serve .",
+    "db:setup": "node scripts/setup_appwrite.js"
   },
   "dependencies": {
     "appwrite": "^21.5.0",
