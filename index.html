@@ -59,9 +59,87 @@
         </div>
     </div>
 
-    <main class="flex-grow relative overflow-y-auto p-4 flex flex-col items-center justify-center scroll-smooth text-center" style="background-color: var(--color-bg);">
-        
-        <div class="max-w-3xl w-full mx-auto py-12 px-6 fade-in-page">
+    <main class="flex-grow relative overflow-y-auto p-4 flex flex-col items-center scroll-smooth" style="background-color: var(--color-bg);">
+        <div id="dashboard-container" class="hidden w-full max-w-6xl mx-auto py-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-800">Welcome back, <span id="dashboard-name">Student</span></h2>
+                    <p class="text-slate-500 mt-1">Here is your study progress at a glance.</p>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <a href="/study" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-sm transition">Start Practice</a>
+                    <a href="/roleplay" class="bg-white text-slate-700 font-bold py-2.5 px-5 rounded-xl border border-slate-200 hover:bg-slate-50 transition">Roleplay Session</a>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8" id="dashboard-stats">
+                <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Total attempts</p>
+                    <p class="text-2xl font-bold text-slate-800 mt-2" id="stat-total">0</p>
+                </div>
+                <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Average score</p>
+                    <p class="text-2xl font-bold text-slate-800 mt-2" id="stat-average">0%</p>
+                </div>
+                <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Best score</p>
+                    <p class="text-2xl font-bold text-slate-800 mt-2" id="stat-best">0%</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-slate-800 text-lg">Study Activity</h3>
+                        <span class="text-xs text-slate-500" id="heatmap-range-label">Last 12 weeks</span>
+                    </div>
+                    <div class="dashboard-heatmap" id="dashboard-heatmap-wrapper">
+                        <div class="dashboard-heatmap__months" id="dashboard-heatmap-months"></div>
+                        <div class="dashboard-heatmap__body">
+                            <div class="dashboard-heatmap__labels" id="dashboard-heatmap-labels"></div>
+                            <div class="dashboard-heatmap__grid" id="dashboard-heatmap"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-500 mt-4">
+                        <span>Less</span>
+                        <div class="flex items-center gap-1" id="heatmap-legend"></div>
+                        <span>More</span>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-slate-800 text-lg">Goals</h3>
+                        <span class="text-xs text-slate-500" id="goals-progress">0/0 completed</span>
+                    </div>
+                    <form id="dashboard-goal-form" class="dashboard-goal-form flex flex-col sm:flex-row gap-2 mb-4">
+                        <input id="dashboard-goal-input" type="text" placeholder="Add a study goal" class="dashboard-goal-input flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" maxlength="120" />
+                        <button type="submit" class="dashboard-goal-add bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-xl text-sm">Add</button>
+                    </form>
+                    <div id="dashboard-goals" class="dashboard-goals space-y-2 text-sm"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <h3 class="font-bold text-slate-800 text-lg mb-4">Focus Areas</h3>
+                    <div id="dashboard-focus" class="space-y-3 text-sm text-slate-600"></div>
+                </div>
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-slate-800 text-lg">AI Next Recommendation</h3>
+                        <span id="dashboard-recommendation-meta" class="text-xs text-slate-500">Updated daily</span>
+                    </div>
+                    <div id="dashboard-recommendation" class="text-sm text-slate-600"></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mt-6">
+                <h3 class="font-bold text-slate-800 text-lg mb-4">Recent Activity</h3>
+                <div id="dashboard-activity" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <div id="marketing-container" class="max-w-3xl w-full mx-auto py-12 px-6 fade-in-page text-center">
             <h2 class="text-4xl sm:text-5xl font-extrabold text-slate-800 tracking-tight mb-6">
                 Master Your Exams with <span class="text-blue-600">MoStudy</span>
             </h2>
@@ -110,6 +188,7 @@
     </script>
     <script src="theme.js" defer></script>
     <script src="nav.js" defer></script>
+    <script type="module" src="auth.js" defer></script>
     <script type="module" src="app.js" defer></script>
 </body>
 </html>

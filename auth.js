@@ -163,7 +163,8 @@ export const loadSettings = async () => {
                             user_id: currentUser.$id,
                             display_name: currentUser.name,
                             history: '[]',
-                            preferences: '{}'
+                            preferences: '{}',
+                            goals: '[]'
                         }
                     );
                     return {};

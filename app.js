@@ -1,6 +1,6 @@
-import { functions, databases, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
+import { functions, databases, DB_ID, COLLECTION_HISTORY, COLLECTION_USERS } from './lib/appwrite.js';
 import { SmartCache } from './lib/cache.js';
-import { ExecutionMethod, ID } from 'appwrite';
+import { ExecutionMethod, ID, Query } from 'appwrite';
 
 // --- CATALOG ---
 
@@ -220,6 +220,8 @@ const selectedTestTime = document.getElementById('selected-test-time');
 const testCategoryTags = document.getElementById('test-category-tags');
 
 const startError = document.getElementById('start-error');
+const dashboardContainer = document.getElementById('dashboard-container');
+const marketingContainer = document.getElementById('marketing-container');
 
 // --- UI INIT ---
 function initializeApp() {
@@ -234,11 +236,503 @@ function initializeApp() {
     setupFlashcardTool();
 }
 
+function initializeHomeDashboard() {
+    if (!dashboardContainer && !marketingContainer) {
+        return;
+    }
+    setupHomeDashboard();
+}
+
 // Wait for DOM to be ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
+    document.addEventListener('DOMContentLoaded', initializeHomeDashboard);
 } else {
     initializeApp();
+    initializeHomeDashboard();
+}
+
+async function waitForAuthInit() {
+    return await Promise.race([
+        new Promise((resolve) => {
+            window.addEventListener('auth-initialized', () => {
+                resolve(window.getCurrentUser ? window.getCurrentUser() : null);
+            }, { once: true });
+        }),
+        new Promise((resolve) => setTimeout(() => {
+            resolve(window.getCurrentUser ? window.getCurrentUser() : null);
+        }, 1500))
+    ]);
+}
+
+async function setupHomeDashboard() {
+    const user = await waitForAuthInit();
+    if (!user) {
+        if (dashboardContainer) dashboardContainer.classList.add('hidden');
+        if (marketingContainer) marketingContainer.classList.remove('hidden');
+        return;
+    }
+
+    if (marketingContainer) marketingContainer.classList.add('hidden');
+    if (dashboardContainer) dashboardContainer.classList.remove('hidden');
+
+    const nameEl = document.getElementById('dashboard-name');
+    if (nameEl) nameEl.textContent = user.name || 'Student';
+
+    await loadDashboardData(user.$id, user.name);
+    bindDashboardGoalEvents(user.$id, user.name);
+}
+
+async function loadDashboardData(userId, displayName) {
+    const activityEl = document.getElementById('dashboard-activity');
+    const focusEl = document.getElementById('dashboard-focus');
+    const heatmapEl = document.getElementById('dashboard-heatmap');
+    const legendEl = document.getElementById('heatmap-legend');
+    const monthsEl = document.getElementById('dashboard-heatmap-months');
+    const labelsEl = document.getElementById('dashboard-heatmap-labels');
+    const rangeLabelEl = document.getElementById('heatmap-range-label');
+    const goalsEl = document.getElementById('dashboard-goals');
+    const goalsProgressEl = document.getElementById('goals-progress');
+    const recommendationEl = document.getElementById('dashboard-recommendation');
+    const recommendationMetaEl = document.getElementById('dashboard-recommendation-meta');
+
+    if (activityEl) activityEl.innerHTML = '<p class="text-slate-500 text-sm">Loading your activity...</p>';
+
+    const fetchHistory = async () => {
+        const queries = [
+            Query.equal('user_id', userId),
+            Query.orderDesc('$createdAt'),
+            Query.limit(100)
+        ];
+        const result = await databases.listDocuments(DB_ID, COLLECTION_HISTORY, queries);
+        return result.documents || [];
+    };
+
+    let historyDocs = [];
+    let goals = [];
+    try {
+        historyDocs = await SmartCache.get(`history_${userId}`, fetchHistory);
+        const profile = await ensureUserProfile(userId, displayName);
+        goals = parseGoals(profile?.goals);
+    } catch (error) {
+        console.error('Failed to load dashboard history:', error);
+        historyDocs = [];
+    }
+
+    const quizDocs = historyDocs.filter((doc) => typeof doc.score === 'number' && doc.total_questions);
+
+    renderDashboardStats(quizDocs);
+    renderDashboardActivity(quizDocs, activityEl);
+    renderDashboardHeatmap(quizDocs, heatmapEl, legendEl, monthsEl, labelsEl, rangeLabelEl);
+    renderDashboardFocus(quizDocs, focusEl);
+    renderDashboardGoals(goals, goalsEl, goalsProgressEl);
+    await renderDashboardRecommendation(userId, quizDocs, goals, recommendationEl, recommendationMetaEl);
+}
+
+function renderDashboardStats(quizDocs) {
+    const totalEl = document.getElementById('stat-total');
+    const avgEl = document.getElementById('stat-average');
+    const bestEl = document.getElementById('stat-best');
+
+    if (!quizDocs.length) {
+        if (totalEl) totalEl.textContent = '0';
+        if (avgEl) avgEl.textContent = '0%';
+        if (bestEl) bestEl.textContent = '0%';
+        return;
+    }
+
+    const scores = quizDocs.map((doc) => doc.score).filter((val) => typeof val === 'number');
+    const total = scores.length;
+    const average = Math.round(scores.reduce((a, b) => a + b, 0) / total);
+    const best = Math.max(...scores);
+
+    if (totalEl) totalEl.textContent = String(total);
+    if (avgEl) avgEl.textContent = `${average}%`;
+    if (bestEl) bestEl.textContent = `${best}%`;
+}
+
+function renderDashboardActivity(quizDocs, activityEl) {
+    if (!activityEl) return;
+    if (!quizDocs.length) {
+        activityEl.innerHTML = '<p class="text-slate-500 text-sm">No activity yet. Start a practice exam to populate your dashboard.</p>';
+        return;
+    }
+
+    const items = quizDocs.slice(0, 5).map((doc) => {
+        const date = new Date(doc.timestamp || doc.$createdAt);
+        const dateLabel = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        return `
+            <div class="flex items-center justify-between text-sm">
+                <div>
+                    <p class="font-semibold text-slate-700">${doc.test_title || 'Practice Exam'}</p>
+                    <p class="text-slate-500">${dateLabel}</p>
+                </div>
+                <span class="font-bold text-slate-800">${doc.score}%</span>
+            </div>
+        `;
+    }).join('');
+
+    activityEl.innerHTML = items;
+}
+
+function renderDashboardHeatmap(quizDocs, heatmapEl, legendEl, monthsEl, labelsEl, rangeLabelEl) {
+    if (!heatmapEl) return;
+
+    const colors = ['#e2e8f0', '#c7d2fe', '#93c5fd', '#60a5fa', '#2563eb'];
+    const weeks = window.matchMedia('(min-width: 1024px)').matches ? 52 : 12;
+    const totalDays = weeks * 7;
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(today.getDate() - (totalDays - 1));
+
+    if (rangeLabelEl) {
+        rangeLabelEl.textContent = `Last ${weeks} weeks`;
+    }
+
+    const counts = new Map();
+    quizDocs.forEach((doc) => {
+        const date = new Date(doc.timestamp || doc.$createdAt);
+        const key = date.toISOString().slice(0, 10);
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    if (labelsEl) {
+        labelsEl.innerHTML = ['Mon', '', 'Wed', '', 'Fri', '', 'Sun']
+            .map((label) => `<span>${label}</span>`)
+            .join('');
+    }
+
+    const monthLabels = [];
+    let currentMonth = -1;
+    for (let week = 0; week < weeks; week++) {
+        const date = new Date(start);
+        date.setDate(start.getDate() + week * 7);
+        const month = date.getMonth();
+        if (month !== currentMonth) {
+            monthLabels.push(`<span>${date.toLocaleDateString(undefined, { month: 'short' })}</span>`);
+            currentMonth = month;
+        } else {
+            monthLabels.push('<span></span>');
+        }
+    }
+    if (monthsEl) monthsEl.innerHTML = monthLabels.join('');
+
+    const cells = [];
+    for (let i = 0; i < totalDays; i++) {
+        const current = new Date(start);
+        current.setDate(start.getDate() + i);
+        const key = current.toISOString().slice(0, 10);
+        const count = counts.get(key) || 0;
+        const intensity = Math.min(count, colors.length - 1);
+        const title = `${current.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${count} session${count === 1 ? '' : 's'}`;
+        cells.push(`<div class="dashboard-heatmap__cell" style="background-color: ${colors[intensity]}" title="${title}"></div>`);
+    }
+
+    heatmapEl.innerHTML = cells.join('');
+
+    if (legendEl) {
+        legendEl.innerHTML = colors.map((color) => `<span class="w-3 h-3 rounded" style="background-color:${color}"></span>`).join('');
+    }
+}
+
+function renderDashboardFocus(quizDocs, focusEl) {
+    const categoryTotals = new Map();
+    quizDocs.forEach((doc) => {
+        if (!doc.category_metrics) return;
+        try {
+            const metrics = JSON.parse(doc.category_metrics);
+            Object.entries(metrics).forEach(([category, stats]) => {
+                const total = categoryTotals.get(category) || { correct: 0, total: 0 };
+                total.correct += stats.correct || 0;
+                total.total += stats.total || 0;
+                categoryTotals.set(category, total);
+            });
+        } catch (e) {
+            console.warn('Failed to parse category metrics for dashboard', e);
+        }
+    });
+
+    const categoryScores = Array.from(categoryTotals.entries()).map(([category, stats]) => ({
+        category,
+        percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
+    }));
+
+    const bottomCategories = [...categoryScores].sort((a, b) => a.percentage - b.percentage).slice(0, 3);
+
+    if (focusEl) {
+        focusEl.innerHTML = bottomCategories.length
+            ? bottomCategories.map((item) => `
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="font-medium text-slate-700">${item.category}</span>
+                        <span class="text-slate-500">${item.percentage}%</span>
+                    </div>
+                    <div class="w-full bg-slate-100 h-2 rounded-full">
+                        <div class="bg-orange-500 h-2 rounded-full" style="width:${item.percentage}%"></div>
+                    </div>
+                </div>
+            `).join('')
+            : '<p class="text-slate-500 text-sm">No category data yet.</p>';
+    }
+}
+
+function parseGoals(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+async function ensureUserProfile(userId, displayName) {
+    try {
+        return await databases.getDocument(DB_ID, COLLECTION_USERS, userId);
+    } catch (e) {
+        if (e.code === 404) {
+            const payload = {
+                user_id: userId,
+                display_name: displayName || 'Student',
+                history: '[]',
+                preferences: '{}',
+                goals: '[]'
+            };
+            return await databases.createDocument(DB_ID, COLLECTION_USERS, userId, payload);
+        }
+        throw e;
+    }
+}
+
+function renderDashboardGoals(goals, goalsEl, progressEl) {
+    if (!goalsEl) return;
+    const completed = goals.filter((goal) => goal.completed).length;
+    if (progressEl) progressEl.textContent = `${completed}/${goals.length} completed`;
+
+    if (!goals.length) {
+        goalsEl.innerHTML = '<p class="text-slate-500 text-sm">No goals yet. Add your first goal to stay on track.</p>';
+        return;
+    }
+
+    goalsEl.innerHTML = goals.map((goal) => `
+        <div class="dashboard-goal-item" data-goal-id="${goal.id}">
+            <label class="flex items-center gap-2 text-slate-700 text-sm flex-1">
+                <input class="dashboard-goal-checkbox" type="checkbox" data-goal-id="${goal.id}" data-goal-action="toggle" ${goal.completed ? 'checked' : ''}>
+                <span class="${goal.completed ? 'line-through text-slate-400' : ''}">${goal.text}</span>
+            </label>
+            <button class="dashboard-goal-remove" data-goal-id="${goal.id}" data-goal-action="delete">Remove</button>
+        </div>
+    `).join('');
+}
+
+function bindDashboardGoalEvents(userId, displayName) {
+    const form = document.getElementById('dashboard-goal-form');
+    const input = document.getElementById('dashboard-goal-input');
+    const addButton = form?.querySelector('.dashboard-goal-add');
+    const goalsEl = document.getElementById('dashboard-goals');
+    const maxGoals = 8;
+
+    if (form) {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const rawText = input?.value || '';
+            const text = rawText.trim().slice(0, 120);
+            if (!text) return;
+            const profile = await ensureUserProfile(userId, displayName);
+            const goals = parseGoals(profile?.goals);
+
+            if (goals.length >= maxGoals) {
+                if (input) input.value = '';
+                return;
+            }
+
+            if (goals.some((goal) => goal.text.toLowerCase() === text.toLowerCase())) {
+                if (input) input.value = '';
+                return;
+            }
+
+            if (addButton) {
+                addButton.disabled = true;
+                addButton.textContent = 'Saving...';
+            }
+
+            goals.unshift({ id: `${Date.now()}`, text, completed: false, createdAt: new Date().toISOString() });
+            await databases.updateDocument(DB_ID, COLLECTION_USERS, userId, { goals: JSON.stringify(goals) });
+            renderDashboardGoals(goals, goalsEl, document.getElementById('goals-progress'));
+            if (input) input.value = '';
+
+            if (addButton) {
+                addButton.disabled = false;
+                addButton.textContent = 'Add';
+            }
+        });
+    }
+
+    if (goalsEl) {
+        goalsEl.addEventListener('click', async (event) => {
+            const target = event.target;
+            const action = target.dataset.goalAction;
+            const goalId = target.dataset.goalId;
+            if (!action || !goalId) return;
+            const profile = await ensureUserProfile(userId, displayName);
+            let goals = parseGoals(profile?.goals);
+            if (action === 'delete') {
+                goals = goals.filter((goal) => goal.id !== goalId);
+            }
+            await databases.updateDocument(DB_ID, COLLECTION_USERS, userId, { goals: JSON.stringify(goals) });
+            renderDashboardGoals(goals, goalsEl, document.getElementById('goals-progress'));
+        });
+
+        goalsEl.addEventListener('change', async (event) => {
+            const target = event.target;
+            if (!target || target.dataset.goalAction !== 'toggle') return;
+            const goalId = target.dataset.goalId;
+            const profile = await ensureUserProfile(userId, displayName);
+            const goals = parseGoals(profile?.goals).map((goal) =>
+                goal.id === goalId ? { ...goal, completed: target.checked } : goal
+            );
+            await databases.updateDocument(DB_ID, COLLECTION_USERS, userId, { goals: JSON.stringify(goals) });
+            renderDashboardGoals(goals, goalsEl, document.getElementById('goals-progress'));
+        });
+    }
+}
+
+function getRecommendationCacheKey(userId) {
+    return `mostudy_reco_${userId}`;
+}
+
+function readRecommendationCache(userId) {
+    const raw = localStorage.getItem(getRecommendationCacheKey(userId));
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function writeRecommendationCache(userId, payload) {
+    localStorage.setItem(getRecommendationCacheKey(userId), JSON.stringify(payload));
+}
+
+function getTodayKey() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+async function renderDashboardRecommendation(userId, quizDocs, goals, recommendationEl, metaEl) {
+    if (!recommendationEl) return;
+    const cached = readRecommendationCache(userId);
+    const todayKey = getTodayKey();
+
+    if (cached?.date === todayKey && cached?.text) {
+        recommendationEl.textContent = cached.text;
+        if (metaEl) metaEl.textContent = `Updated today`; 
+        return;
+    }
+
+    recommendationEl.textContent = 'Generating your next best step...';
+    if (metaEl) metaEl.textContent = 'Updating now';
+
+    const recommendation = await generateDailyRecommendation(userId, quizDocs, goals);
+    if (recommendation) {
+        recommendationEl.textContent = recommendation;
+        if (metaEl) metaEl.textContent = `Updated today`;
+        writeRecommendationCache(userId, { date: todayKey, text: recommendation });
+    } else {
+        recommendationEl.textContent = 'Complete a quiz or set a goal to unlock tailored recommendations.';
+        if (metaEl) metaEl.textContent = 'Updated daily';
+    }
+}
+
+async function generateDailyRecommendation(userId, quizDocs, goals) {
+    const tools = [
+        'Practice Exams: timed objective tests with category breakdowns in Study.',
+        'Review Screen: shows correct answers, category scores, and AI feedback per question.',
+        'Flashcards: auto-built from any test or upload; toggle categories and explanations.',
+        'Roleplay: AI-generated scenarios with judging feedback and scores.',
+        'Goals: personal checklist stored on your profile; track completion.'
+    ];
+
+    const recent = quizDocs[0];
+    const averageScore = quizDocs.length
+        ? Math.round(quizDocs.reduce((sum, doc) => sum + (doc.score || 0), 0) / quizDocs.length)
+        : null;
+    const focusAreas = extractFocusAreas(quizDocs).slice(0, 3);
+    const goalsSummary = goals.map((goal) => `${goal.completed ? '✅' : '⬜'} ${goal.text}`).slice(0, 6);
+
+    const payload = {
+        userId,
+        recentTest: recent ? {
+            title: recent.test_title || 'Practice Exam',
+            score: recent.score,
+            date: recent.timestamp || recent.$createdAt
+        } : null,
+        averageScore,
+        focusAreas,
+        goals: goalsSummary,
+        tools
+    };
+
+    try {
+        const requestBody = {
+            model: 'google/gemini-3-flash-preview',
+            temperature: 0.3,
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are MoStudy's study coach. Provide ONE concise recommendation (1-2 sentences).\nUse the available tools wisely. Avoid fluff. Output plain text only.`
+                },
+                {
+                    role: 'user',
+                    content: `Context:\n${JSON.stringify(payload, null, 2)}\n\nRecommend the single best next action for today.`
+                }
+            ]
+        };
+
+        const execution = await functions.createExecution(
+            'ai-chat',
+            JSON.stringify(requestBody),
+            false,
+            '/',
+            ExecutionMethod.POST,
+            { 'Content-Type': 'application/json' }
+        );
+
+        if (execution.status !== 'completed') return null;
+        const data = JSON.parse(execution.responseBody || '{}');
+        const content = data?.choices?.[0]?.message?.content;
+        if (!content || typeof content !== 'string') return null;
+        return content.trim();
+    } catch (error) {
+        console.error('Recommendation generation failed:', error);
+        return null;
+    }
+}
+
+function extractFocusAreas(quizDocs) {
+    const categoryTotals = new Map();
+    quizDocs.forEach((doc) => {
+        if (!doc.category_metrics) return;
+        try {
+            const metrics = JSON.parse(doc.category_metrics);
+            Object.entries(metrics).forEach(([category, stats]) => {
+                const total = categoryTotals.get(category) || { correct: 0, total: 0 };
+                total.correct += stats.correct || 0;
+                total.total += stats.total || 0;
+                categoryTotals.set(category, total);
+            });
+        } catch (e) {
+            console.warn('Failed to parse category metrics for recommendation', e);
+        }
+    });
+
+    return Array.from(categoryTotals.entries())
+        .map(([category, stats]) => ({
+            category,
+            percentage: stats.total ? Math.round((stats.correct / stats.total) * 100) : 0
+        }))
+        .sort((a, b) => a.percentage - b.percentage)
+        .map((item) => `${item.category} (${item.percentage}%)`);
 }
 
 function setupEventListeners() {
