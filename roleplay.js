@@ -4,16 +4,19 @@
  */
 
 // Import Appwrite config
-import { databases, functions, DB_ID, COLLECTION_HISTORY } from './lib/appwrite.js';
+import { databases, functions, DB_ID, COLLECTION_HISTORY, APPWRITE_ENDPOINT } from './lib/appwrite.js';
 import { ID, ExecutionMethod } from 'appwrite';
 
 // ==================== CONFIGURATION ====================
 
 // Set to true to use local mock responses instead of real AI (for MVP/Offline)
-const USE_DUMMY_AI = true;
+const USE_DUMMY_AI = false;
 
 // Appwrite function ID for AI chat (deployed via appwrite.json)
 const AI_FUNCTION_ID = "ai-chat";
+
+// For logging/debugging only
+const AI_API_ENDPOINT = APPWRITE_ENDPOINT;
 
 // Use Google Gemini 3 Flash Preview (for everything)
 const AI_MODEL = "google/gemini-3-flash-preview";

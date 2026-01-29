@@ -13,7 +13,7 @@
                 ".gitignore"
             ],
             "execute": [
-                "users"
+                "any"
             ],
             "events": [],
             "schedule": "",

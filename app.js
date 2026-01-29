@@ -1277,7 +1277,7 @@ function renderAISummaryPanel() {
             </div>
             <div>
                 <h4 class="font-bold text-slate-800">Performance Analysis</h4>
-                <p class="text-slate-500 text-sm">Powered by GPT-5.1</p>
+                <p class="text-slate-500 text-sm">Powered by Google</p>
             </div>
         </div>
 
@@ -2025,114 +2025,7 @@ function playTimerAlert() {
     }
 }
 
-// --- NEW APPWRITE AI REVIEW FUNCTION ---
+// --- AI REVIEW FUNCTION (uses ai-chat) ---
 async function generateAIReview() {
-    console.log('Starting AI Review generation...');
-    const runId = ++aiReviewRunId;
-    aiReviewError = null;
-    aiReviewData = { overall_review: null, questions_review: [] };
-    aiFeedbackByQuestionId = {};
-    aiReviewLoading = true;
-    aiOverallLoading = true;
-    
-    // Update UI to show loading
-    renderAISummaryPanel();
-    updateAIFeedbackInReview();
-
-    try {
-        const user = window.getCurrentUser ? window.getCurrentUser() : null;
-        if (!user) {
-             throw new Error("Please sign in to view AI feedback.");
-        }
-
-        // Prepare payload for Appwrite Function
-        const payload = {
-            test_title: currentTest?.title || 'Practice Test',
-            user_id: user.$id,
-            questions: questions.map((q, i) => ({
-                id: i + 1,
-                text: q.text,
-                options: q.options,
-                correct_option_index: q.correct,
-                user_option_index: userAnswers[i],
-                category: q.category,
-                is_correct: userAnswers[i] === q.correct
-            }))
-        };
-
-        console.log('Sending payload to AI function...', payload.test_title);
-
-        // Call Appwrite Function (ID: 'ai-review')
-        // We use the ID from appwrite.json
-        const FUNCTION_ID = 'ai-review'; 
-        
-        let execution;
-        try {
-            execution = await functions.createExecution(
-                FUNCTION_ID,
-                JSON.stringify(payload),
-                false, // async: false = wait for result (sync)
-                '/', 
-                ExecutionMethod.POST,
-                {'Content-Type': 'application/json'}
-            );
-        } catch (execError) {
-            console.warn("Real AI function execution failed (likely not deployed or offline). Falling back to DUMMY mode.", execError);
-            // Fallback for MVP/Local without cloud function
-            execution = {
-                status: 'completed',
-                responseBody: JSON.stringify({
-                    overall_review: {
-                        overall_score: Math.round((score / questions.length) * 100),
-                        summary: "This is a **simulated AI review** (MVP Mode). Great job completing the test! In a full deployment, this would analyze your specific mistakes.",
-                        strengths: ["Persistance", "Topic Coverage"],
-                        weaknesses: ["Mock Data Only (Connect Real AI)", "Speed"],
-                        next_steps: ["Deploy Appwrite Cloud Function", "Configure OpenRouter Key", "Practice More"]
-                    },
-                    questions_review: questions.map((q, i) => ({
-                        question_id: i + 1,
-                        is_correct: userAnswers[i] === q.correct,
-                        feedback: userAnswers[i] === q.correct 
-                            ? "Correct! Good understanding of this concept." 
-                            : `Incorrect. The correct answer was '${q.options[q.correct]}'.`
-                    }))
-                })
-            };
-        }
-        
-        console.log('AI Function execution:', execution);
-
-        if (execution.status === 'failed') {
-             throw new Error("AI review generation failed on server. Log: " + execution.logs);
-        }
-
-        // Parse result
-        let result;
-        try {
-            result = JSON.parse(execution.responseBody);
-        } catch (e) {
-            throw new Error("Invalid JSON response from AI function: " + execution.responseBody);
-        }
-        
-        if (result.error) throw new Error(result.error);
-        
-        // Expected format: { overall_review: {...}, questions_review: [...] }
-        aiReviewData = result;
-        
-        // Map feedback back
-        if (aiReviewData.questions_review) {
-            aiReviewData.questions_review.forEach(item => {
-                aiFeedbackByQuestionId[item.question_id] = item;
-            });
-        }
-
-    } catch (e) {
-        console.error('AI Review failed:', e);
-        aiReviewError = e.message || "Unknown error generating review";
-    } finally {
-        aiReviewLoading = false;
-        aiOverallLoading = false;
-        renderAISummaryPanel();
-        updateAIFeedbackInReview();
-    }
+    return generateAIReview_OLD();
 }
