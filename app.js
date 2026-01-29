@@ -630,27 +630,48 @@ async function renderDashboardRecommendation(userId, quizDocs, goals, recommenda
         return;
     }
 
-    recommendationEl.textContent = 'Generating your next best step...';
+    // Use a lightweight spinner for loading
+    recommendationEl.innerHTML = '<div class="flex items-center gap-2 text-slate-400"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating next best step...</span></div>';
     if (metaEl) metaEl.textContent = 'Updating now';
 
-    const recommendation = await generateDailyRecommendation(userId, quizDocs, goals);
-    if (recommendation) {
-        recommendationEl.textContent = recommendation;
-        if (metaEl) metaEl.textContent = `Updated today`;
-        writeRecommendationCache(userId, { date: todayKey, text: recommendation });
-    } else {
-        recommendationEl.textContent = 'Complete a quiz or set a goal to unlock tailored recommendations.';
-        if (metaEl) metaEl.textContent = 'Updated daily';
+    try {
+        const recommendation = await generateDailyRecommendation(userId, quizDocs, goals);
+        if (recommendation) {
+            recommendationEl.textContent = recommendation;
+            if (metaEl) metaEl.textContent = `Updated today`;
+            writeRecommendationCache(userId, { date: todayKey, text: recommendation });
+        } else {
+            recommendationEl.textContent = 'Complete a quiz or set a goal to unlock tailored recommendations.';
+            if (metaEl) metaEl.textContent = 'Updated daily';
+        }
+    } catch (error) {
+        console.error('Recommendation generation failed:', error);
+        recommendationEl.innerHTML = `
+            <div class="bg-orange-50 border border-orange-100 rounded-lg p-3">
+                <p class="text-orange-700 text-xs mb-2">The coach is taking a bit longer to respond than usual.</p>
+                <button id="retry-reco" class="text-blue-600 hover:text-blue-800 font-semibold text-xs transition-colors">Try again</button>
+            </div>
+        `;
+        if (metaEl) metaEl.textContent = 'Update failed';
+
+        const retryBtn = document.getElementById('retry-reco');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                renderDashboardRecommendation(userId, quizDocs, goals, recommendationEl, metaEl);
+            }, { once: true });
+        }
     }
 }
 
 async function generateDailyRecommendation(userId, quizDocs, goals) {
+    if (!quizDocs.length && !goals.length) return null;
+
     const tools = [
-        'Practice Exams: timed objective tests with category breakdowns in Study.',
-        'Review Screen: shows correct answers, category scores, and AI feedback per question.',
-        'Flashcards: auto-built from any test or upload; toggle categories and explanations.',
-        'Roleplay: AI-generated scenarios with judging feedback and scores.',
-        'Goals: personal checklist stored on your profile; track completion.'
+        'Practice Exams',
+        'Review Screen (AI Feedback)',
+        'Flashcards',
+        'Roleplay Scenarios',
+        'Daily Goals List'
     ];
 
     const recent = quizDocs[0];
@@ -658,19 +679,14 @@ async function generateDailyRecommendation(userId, quizDocs, goals) {
         ? Math.round(quizDocs.reduce((sum, doc) => sum + (doc.score || 0), 0) / quizDocs.length)
         : null;
     const focusAreas = extractFocusAreas(quizDocs).slice(0, 3);
-    const goalsSummary = goals.map((goal) => `${goal.completed ? '✅' : '⬜'} ${goal.text}`).slice(0, 6);
+    const goalsSummary = goals.filter(g => !g.completed).map((goal) => goal.text).slice(0, 3);
 
     const payload = {
-        userId,
-        recentTest: recent ? {
-            title: recent.test_title || 'Practice Exam',
-            score: recent.score,
-            date: recent.timestamp || recent.$createdAt
-        } : null,
-        averageScore,
-        focusAreas,
-        goals: goalsSummary,
-        tools
+        stats: { sessions: quizDocs.length, average: averageScore },
+        recent: recent ? { title: recent.test_title, score: recent.score } : null,
+        weaknesses: focusAreas,
+        activeGoals: goalsSummary,
+        availableTools: tools
     };
 
     try {
@@ -680,32 +696,59 @@ async function generateDailyRecommendation(userId, quizDocs, goals) {
             messages: [
                 {
                     role: 'system',
-                    content: `You are MoStudy's study coach. Provide ONE concise recommendation (1-2 sentences).\nUse the available tools wisely. Avoid fluff. Output plain text only.`
+                    content: `You are MoStudy's study coach. Based on user stats and goals, suggest ONE specific action for today. Be concise (1-2 sentences). Return plain text.`
                 },
                 {
                     role: 'user',
-                    content: `Context:\n${JSON.stringify(payload, null, 2)}\n\nRecommend the single best next action for today.`
+                    content: `User Data: ${JSON.stringify(payload)}`
                 }
             ]
         };
 
-        const execution = await functions.createExecution(
-            'ai-chat',
-            JSON.stringify(requestBody),
-            false,
-            '/',
-            ExecutionMethod.POST,
-            { 'Content-Type': 'application/json' }
-        );
+        let execution;
+        try {
+            // First attempt: Synchronous (Fast)
+            execution = await functions.createExecution(
+                'ai-chat',
+                JSON.stringify(requestBody),
+                false,
+                '/',
+                ExecutionMethod.POST,
+                { 'Content-Type': 'application/json' }
+            );
+        } catch (e) {
+            // If synchronous call times out (30s limit on Cloud), switch to Async + Polling
+            if (e.code === 408 || e.status === 408 || e.message?.toLowerCase().includes('timeout')) {
+                console.warn('Sync execution timed out, switching to async polling...');
+                const asyncExec = await functions.createExecution(
+                    'ai-chat',
+                    JSON.stringify(requestBody),
+                    true,
+                    '/',
+                    ExecutionMethod.POST,
+                    { 'Content-Type': 'application/json' }
+                );
 
-        if (execution.status !== 'completed') return null;
+                // Poll for up to 40 seconds
+                let pollCount = 0;
+                while (pollCount < 20) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    execution = await functions.getExecution('ai-chat', asyncExec.$id);
+                    if (execution.status === 'completed') break;
+                    if (execution.status === 'failed') throw new Error('AI function execution failed');
+                    pollCount++;
+                }
+            } else {
+                throw e;
+            }
+        }
+
+        if (execution?.status !== 'completed') return null;
         const data = JSON.parse(execution.responseBody || '{}');
         const content = data?.choices?.[0]?.message?.content;
-        if (!content || typeof content !== 'string') return null;
-        return content.trim();
+        return content?.trim() || null;
     } catch (error) {
-        console.error('Recommendation generation failed:', error);
-        return null;
+        throw error;
     }
 }
 
