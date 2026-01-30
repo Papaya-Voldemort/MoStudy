@@ -145,6 +145,16 @@ let flashcardAgain = new Set();
 let flashcardAutoAdvanceTimer = null;
 let flashcardIsFlipped = false;
 
+// --- TEST MAKER STATE ---
+let testMakerItem = null;
+let testMakerModeValue = null;
+let testMakerSourceTitle = null;
+let testMakerAttemptSize = 1;
+let testMakerAttemptIndex = 0;
+let testMakerAttemptItems = [];
+let testMakerAttemptResponses = [];
+let testMakerSourceCache = {};
+
 // --- DOM ELEMENTS ---
 const startScreen = document.getElementById('start-screen');
 const quizInterface = document.getElementById('quiz-interface');
@@ -176,6 +186,7 @@ const testDetailsContainer = document.getElementById('test-details-container');
 const toolHub = document.getElementById('tool-hub');
 const examPanel = document.getElementById('exam-panel');
 const flashcardPanel = document.getElementById('flashcard-panel');
+const testMakerPanel = document.getElementById('test-maker-panel');
 const flashcardConfig = document.getElementById('flashcard-config');
 const flashcardEditBtn = document.getElementById('flashcard-edit-btn');
 
@@ -211,6 +222,29 @@ const flashcardEmpty = document.getElementById('flashcard-empty');
 const flashcardComplete = document.getElementById('flashcard-complete');
 const flashcardSourceStatus = document.getElementById('flashcard-source-status');
 
+// Test maker elements
+const testMakerMode = document.getElementById('test-maker-mode');
+const testMakerMeta = document.getElementById('test-maker-meta');
+const testMakerQuestionView = document.getElementById('test-maker-question-view');
+const testMakerAnswersView = document.getElementById('test-maker-answers-view');
+const testMakerQuestionText = document.getElementById('test-maker-question-text');
+const testMakerAnswerList = document.getElementById('test-maker-answer-list');
+const testMakerInputAnswers = document.getElementById('test-maker-input-answers');
+const testMakerInputQuestion = document.getElementById('test-maker-input-question');
+const testMakerQuestionInput = document.getElementById('test-maker-question-input');
+const testMakerForm = document.getElementById('test-maker-form');
+const testMakerError = document.getElementById('test-maker-error');
+const testMakerSubmit = document.getElementById('test-maker-submit');
+const testMakerSubmitSpinner = document.getElementById('test-maker-submit-spinner');
+const testMakerResult = document.getElementById('test-maker-result');
+const testMakerScore = document.getElementById('test-maker-score');
+const testMakerReasoning = document.getElementById('test-maker-reasoning');
+const testMakerSuggestion = document.getElementById('test-maker-suggestion');
+const testMakerSourceSelect = document.getElementById('test-maker-source');
+const testMakerCountSelect = document.getElementById('test-maker-count');
+const testMakerStartBtn = document.getElementById('test-maker-start');
+const testMakerProgress = document.getElementById('test-maker-progress');
+
 // Details Elements
 const selectedTestIcon = document.getElementById('selected-test-icon');
 const selectedTestTitle = document.getElementById('selected-test-title');
@@ -234,6 +268,7 @@ function initializeApp() {
     renderCatalog();
     setupEventListeners();
     setupFlashcardTool();
+    setupTestMakerTool();
 }
 
 function initializeHomeDashboard() {
@@ -820,8 +855,14 @@ function setupEventListeners() {
             case 'open-flashcards':
                 showFlashcardPanel();
                 break;
+            case 'open-test-maker':
+                showTestMakerPanel();
+                break;
             case 'back-to-tools':
                 showToolHub();
+                break;
+            case 'test-maker-new':
+                prepareTestMakerAttempt();
                 break;
             case 'show-review':
                 showReviewScreen();
@@ -2045,18 +2086,30 @@ function showToolHub() {
     toolHub?.classList.remove('hidden');
     examPanel?.classList.add('hidden');
     flashcardPanel?.classList.add('hidden');
+    testMakerPanel?.classList.add('hidden');
 }
 
 function showExamPanel() {
     toolHub?.classList.add('hidden');
     examPanel?.classList.remove('hidden');
     flashcardPanel?.classList.add('hidden');
+    testMakerPanel?.classList.add('hidden');
 }
 
 function showFlashcardPanel() {
     toolHub?.classList.add('hidden');
     examPanel?.classList.add('hidden');
     flashcardPanel?.classList.remove('hidden');
+    testMakerPanel?.classList.add('hidden');
+}
+
+function showTestMakerPanel() {
+    toolHub?.classList.add('hidden');
+    examPanel?.classList.add('hidden');
+    flashcardPanel?.classList.add('hidden');
+    testMakerPanel?.classList.remove('hidden');
+    populateTestMakerSources();
+    resetTestMakerAttemptUI();
 }
 
 function toggleFlashcardConfig() {
@@ -2539,6 +2592,348 @@ function exportScore() {
     URL.revokeObjectURL(url);
 }
 window.exportScore = exportScore;
+
+// ===== TEST MAKER MODE =====
+function setupTestMakerTool() {
+    if (!testMakerPanel) return;
+
+    populateTestMakerSources();
+
+    if (testMakerForm) {
+        testMakerForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            handleTestMakerSubmit();
+        });
+    }
+
+    if (testMakerStartBtn) {
+        testMakerStartBtn.addEventListener('click', () => {
+            prepareTestMakerAttempt();
+        });
+    }
+
+    if (testMakerSourceSelect) {
+        testMakerSourceSelect.addEventListener('change', () => {
+            resetTestMakerAttemptUI();
+        });
+    }
+
+    if (testMakerCountSelect) {
+        testMakerCountSelect.addEventListener('change', () => {
+            resetTestMakerAttemptUI();
+        });
+    }
+}
+
+function normalizeInput(value) {
+    return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function showTestMakerError(message) {
+    if (!testMakerError) return;
+    if (!message) {
+        testMakerError.classList.add('hidden');
+        testMakerError.textContent = '';
+        return;
+    }
+    testMakerError.textContent = message;
+    testMakerError.classList.remove('hidden');
+}
+
+function setTestMakerLoading(isLoading) {
+    if (testMakerSubmit) testMakerSubmit.disabled = isLoading;
+    if (testMakerSubmitSpinner) {
+        testMakerSubmitSpinner.classList.toggle('hidden', !isLoading);
+    }
+    if (testMakerStartBtn) testMakerStartBtn.disabled = isLoading;
+}
+
+function resetTestMakerResult() {
+    if (testMakerResult) testMakerResult.classList.add('hidden');
+    if (testMakerScore) testMakerScore.textContent = '';
+    if (testMakerReasoning) testMakerReasoning.textContent = '';
+    if (testMakerSuggestion) testMakerSuggestion.textContent = '';
+}
+
+function clearTestMakerInputs() {
+    const answerInputs = testMakerPanel?.querySelectorAll('.test-maker-answer') || [];
+    answerInputs.forEach((input) => {
+        input.value = '';
+    });
+    if (testMakerQuestionInput) testMakerQuestionInput.value = '';
+}
+
+function resetTestMakerAttemptUI() {
+    testMakerItem = null;
+    testMakerAttemptIndex = 0;
+    testMakerAttemptItems = [];
+    testMakerAttemptResponses = [];
+    if (testMakerProgress) testMakerProgress.textContent = '0 of 0';
+    if (testMakerMode) testMakerMode.textContent = 'Mode A';
+    if (testMakerMeta) testMakerMeta.textContent = 'Select a source to begin';
+    if (testMakerQuestionView) testMakerQuestionView.classList.add('hidden');
+    if (testMakerAnswersView) testMakerAnswersView.classList.add('hidden');
+    if (testMakerInputAnswers) testMakerInputAnswers.classList.add('hidden');
+    if (testMakerInputQuestion) testMakerInputQuestion.classList.add('hidden');
+    if (testMakerSubmit) {
+        const label = testMakerSubmit.querySelector('span');
+        if (label) label.textContent = 'Grade Attempt';
+    }
+    clearTestMakerInputs();
+    resetTestMakerResult();
+}
+
+function populateTestMakerSources() {
+    if (!testMakerSourceSelect) return;
+    testMakerSourceSelect.innerHTML = '';
+
+    const currentOption = document.createElement('option');
+    currentOption.value = 'current';
+    currentOption.textContent = 'Current Selected Test';
+    testMakerSourceSelect.appendChild(currentOption);
+
+    catalog.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.title;
+        testMakerSourceSelect.appendChild(option);
+    });
+
+    if (!(currentTest && currentTest.questions && currentTest.questions.length)) {
+        testMakerSourceSelect.value = catalog[0]?.id || 'current';
+    }
+}
+
+async function resolveTestMakerSource() {
+    const selected = testMakerSourceSelect?.value || 'current';
+    if (selected === 'current') {
+        if (currentTest && Array.isArray(currentTest.questions) && currentTest.questions.length) {
+            return currentTest;
+        }
+        return null;
+    }
+
+    if (testMakerSourceCache[selected]) return testMakerSourceCache[selected];
+    const item = catalog.find((entry) => entry.id === selected);
+    if (!item) return null;
+    const res = await fetch(item.file);
+    if (!res.ok) throw new Error(`Failed to load ${item.file}`);
+    const raw = await res.json();
+    const test = normalizeTestData(raw, item.title);
+    validateQuestions(test.questions);
+    testMakerSourceCache[selected] = test;
+    return test;
+}
+
+function buildTestMakerAttemptItems(source, count) {
+    const pool = [...source.questions];
+    const shuffled = pool.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, Math.min(count, shuffled.length)).map((question) => ({
+        question,
+        mode: Math.random() < 0.5 ? 'answers' : 'question'
+    }));
+}
+
+async function prepareTestMakerAttempt() {
+    if (!testMakerPanel) return;
+    showTestMakerError('');
+    resetTestMakerResult();
+
+    try {
+        const source = await resolveTestMakerSource();
+        if (!source || !Array.isArray(source.questions) || !source.questions.length) {
+            showTestMakerError('Select a test source with questions before starting.');
+            return;
+        }
+
+        const countValue = parseInt(testMakerCountSelect?.value || '1', 10);
+        const safeCount = Number.isFinite(countValue) ? Math.max(1, countValue) : 1;
+
+        testMakerSourceTitle = source.title || 'Practice Test';
+        testMakerAttemptSize = Math.min(safeCount, source.questions.length);
+        testMakerAttemptIndex = 0;
+        testMakerAttemptResponses = [];
+        testMakerAttemptItems = buildTestMakerAttemptItems(source, testMakerAttemptSize);
+
+        loadTestMakerItemFromAttempt();
+    } catch (error) {
+        console.error('Test Maker load error:', error);
+        showTestMakerError('Unable to load a test item. Please try again.');
+    }
+}
+
+function loadTestMakerItemFromAttempt() {
+    if (!testMakerAttemptItems.length) return;
+    const current = testMakerAttemptItems[testMakerAttemptIndex];
+    testMakerItem = current.question;
+    testMakerModeValue = current.mode;
+    renderTestMakerItem();
+}
+
+function renderTestMakerItem() {
+    if (!testMakerItem) return;
+
+    const isAnswerMode = testMakerModeValue === 'answers';
+    if (testMakerMode) {
+        testMakerMode.textContent = isAnswerMode ? 'Mode A: Write Answers' : 'Mode B: Write Question';
+    }
+    if (testMakerMeta) {
+        const category = testMakerItem.category || 'General';
+        testMakerMeta.textContent = `${testMakerSourceTitle} • ${category}`;
+    }
+
+    if (testMakerProgress) {
+        testMakerProgress.textContent = `${testMakerAttemptIndex + 1} of ${testMakerAttemptSize}`;
+    }
+
+    if (testMakerQuestionView) testMakerQuestionView.classList.toggle('hidden', !isAnswerMode);
+    if (testMakerAnswersView) testMakerAnswersView.classList.toggle('hidden', isAnswerMode);
+    if (testMakerInputAnswers) testMakerInputAnswers.classList.toggle('hidden', !isAnswerMode);
+    if (testMakerInputQuestion) testMakerInputQuestion.classList.toggle('hidden', isAnswerMode);
+
+    if (isAnswerMode && testMakerQuestionText) {
+        testMakerQuestionText.textContent = testMakerItem.text || '';
+    }
+
+    if (!isAnswerMode && testMakerAnswerList) {
+        testMakerAnswerList.innerHTML = '';
+        (testMakerItem.options || []).forEach((option) => {
+            const li = document.createElement('li');
+            li.textContent = option;
+            testMakerAnswerList.appendChild(li);
+        });
+    }
+
+    clearTestMakerInputs();
+    resetTestMakerResult();
+
+    if (testMakerSubmit) {
+        const isLast = testMakerAttemptIndex === testMakerAttemptSize - 1;
+        const label = testMakerSubmit.querySelector('span');
+        if (label) label.textContent = isLast ? 'Grade Attempt' : 'Next Question';
+    }
+}
+
+function getTestMakerStudentInput() {
+    if (testMakerModeValue === 'answers') {
+        const answerInputs = Array.from(testMakerPanel?.querySelectorAll('.test-maker-answer') || []);
+        const answers = answerInputs.map((input) => normalizeInput(input.value));
+        if (answers.some((value) => !value)) return null;
+        return { answers };
+    }
+
+    const question = normalizeInput(testMakerQuestionInput?.value || '');
+    if (!question) return null;
+    return { question };
+}
+
+function safeJsonParse(text) {
+    if (typeof text !== 'string') return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        try {
+            return JSON.parse(match[0]);
+        } catch {
+            return null;
+        }
+    }
+}
+
+async function gradeTestMakerAttempt(payload) {
+    const requestBody = {
+        model: 'google/gemini-3-flash-preview',
+        temperature: 0.2,
+        messages: [
+            {
+                role: 'system',
+                content: 'You are a strict FBLA test maker grader. Evaluate each item in the attempt against the official question and answers. Return JSON only with: {"score":0-4,"reasoning":"short explanation","suggestion":"one improvement"}. The score is an overall 0-4 for the entire attempt.'
+            },
+            {
+                role: 'user',
+                content: JSON.stringify(payload)
+            }
+        ]
+    };
+
+    const execution = await functions.createExecution(
+        'ai-chat',
+        JSON.stringify(requestBody),
+        false,
+        '/',
+        ExecutionMethod.POST,
+        { 'Content-Type': 'application/json' }
+    );
+
+    if (execution.status !== 'completed') {
+        throw new Error('AI grading failed. Please try again.');
+    }
+
+    const data = safeJsonParse(execution.responseBody || '') || {};
+    const content = data?.choices?.[0]?.message?.content;
+    const parsed = content ? safeJsonParse(content) : data;
+    if (!parsed) throw new Error('AI response could not be parsed.');
+    return parsed;
+}
+
+async function handleTestMakerSubmit() {
+    if (!testMakerItem || !testMakerAttemptItems.length) {
+        showTestMakerError('Start an attempt first.');
+        return;
+    }
+
+    showTestMakerError('');
+    resetTestMakerResult();
+
+    const studentInput = getTestMakerStudentInput();
+    if (!studentInput) {
+        showTestMakerError('Please complete all required fields before submitting.');
+        return;
+    }
+
+    const responseEntry = {
+        mode: testMakerModeValue,
+        official: {
+            question: normalizeInput(testMakerItem.text),
+            answers: (testMakerItem.options || []).map((opt) => normalizeInput(opt)),
+            correct_index: testMakerItem.correct
+        },
+        student_input: studentInput
+    };
+    testMakerAttemptResponses.push(responseEntry);
+
+    const isLast = testMakerAttemptIndex === testMakerAttemptSize - 1;
+    if (!isLast) {
+        testMakerAttemptIndex += 1;
+        loadTestMakerItemFromAttempt();
+        return;
+    }
+
+    const payload = {
+        attempt_size: testMakerAttemptSize,
+        source: testMakerSourceTitle,
+        items: testMakerAttemptResponses
+    };
+
+    setTestMakerLoading(true);
+    try {
+        const result = await gradeTestMakerAttempt(payload);
+        const rawScore = Number(result.score);
+        const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(4, Math.round(rawScore))) : 0;
+
+        if (testMakerScore) testMakerScore.textContent = `${score}/4`;
+        if (testMakerReasoning) testMakerReasoning.textContent = result.reasoning || 'No reasoning provided.';
+        if (testMakerSuggestion) testMakerSuggestion.textContent = result.suggestion || 'No suggestion provided.';
+        if (testMakerResult) testMakerResult.classList.remove('hidden');
+    } catch (error) {
+        console.error('Test Maker grading error:', error);
+        showTestMakerError(error.message || 'AI grading failed. Please try again.');
+    } finally {
+        setTestMakerLoading(false);
+    }
+}
 
 function playTimerAlert() {
     try {
