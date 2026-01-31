@@ -1028,6 +1028,7 @@ function normalizeTestData(raw, fallbackTitle) {
 
     if (raw && Array.isArray(raw.questions)) {
         return {
+            id: raw.id || null, // Preserve test ID for analytics
             title: raw.title || fallbackTitle || "Custom Test",
             description: raw.description || "",
             timeLimitSeconds: Number.isFinite(raw.timeLimitSeconds) ? raw.timeLimitSeconds : 3000,
@@ -1456,6 +1457,16 @@ async function saveQuizReport(categoryScores) {
     }
 
     try {
+        // Build per-question results for analytics
+        const results = {};
+        questions.forEach((q, i) => {
+            results[`q${i}`] = {
+                correct: userAnswers[i] === q.correct,
+                userAnswer: userAnswers[i],
+                correctAnswer: q.correct
+            };
+        });
+        
         const reportData = {
             user_id: user.$id,
             test_id: currentTest?.id || 'unknown',
@@ -1464,7 +1475,8 @@ async function saveQuizReport(categoryScores) {
             total_questions: questions.length,
             correct_count: score,
             timestamp: new Date().toISOString(),
-            // Store complex object as string for simple attributes
+            // Store complex objects as strings for Appwrite
+            results: JSON.stringify(results),
             category_metrics: JSON.stringify(Object.fromEntries(
                 Object.entries(categoryScores).map(([cat, stats]) => [
                     cat,
@@ -1473,6 +1485,14 @@ async function saveQuizReport(categoryScores) {
             ))
         };
 
+        console.log('[Quiz Report] Saving report:', {
+            test_id: reportData.test_id,
+            user_id: reportData.user_id,
+            score: reportData.score,
+            total_questions: reportData.total_questions,
+            has_results: !!reportData.results
+        });
+
         // Create document in History collection
         await databases.createDocument(
             DB_ID,
@@ -1480,7 +1500,7 @@ async function saveQuizReport(categoryScores) {
             ID.unique(), 
             reportData
         );
-        console.log('Quiz report saved to Appwrite');
+        console.log('[Quiz Report] Successfully saved to Appwrite');
         
         // Invalidate history cache if we ever add a history view
         SmartCache.invalidate(`history_${user.$id}`);
