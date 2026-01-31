@@ -1,4 +1,4 @@
-import { functions, databases, DB_ID, COLLECTION_HISTORY, COLLECTION_USERS } from './lib/appwrite.js';
+import { functions, databases, DB_ID, COLLECTION_HISTORY, COLLECTION_USERS, COLLECTION_TESTS, safeExecuteFunction } from './lib/appwrite.js';
 import { SmartCache } from './lib/cache.js';
 import { ExecutionMethod, ID, Query } from 'appwrite';
 
@@ -113,6 +113,49 @@ const catalog = [
         icon: "🤖"
     }
 ];
+
+// Database tests cache
+let databaseTests = [];
+
+// Load tests from database
+async function loadDatabaseTests() {
+    try {
+        const response = await databases.listDocuments(
+            DB_ID,
+            COLLECTION_TESTS,
+            [
+                Query.orderDesc('$createdAt'),
+                Query.limit(100)
+            ]
+        );
+        
+        databaseTests = response.documents.map(doc => {
+            const testData = typeof doc.test_data === 'string' ? JSON.parse(doc.test_data) : doc.test_data;
+            return {
+                id: testData.id,
+                title: testData.title,
+                description: testData.description,
+                timeLimitSeconds: testData.timeLimitSeconds,
+                color: testData.color || 'bg-blue-600',
+                icon: testData.icon || '📝',
+                source: 'database',
+                documentId: doc.$id,
+                testData: testData
+            };
+        });
+        
+        return databaseTests;
+    } catch (error) {
+        console.error('Error loading database tests:', error);
+        return [];
+    }
+}
+
+// Get all tests (catalog + database)
+async function getAllTests() {
+    await loadDatabaseTests();
+    return [...catalog, ...databaseTests];
+}
 
 // --- APP STATE ---
 let currentTest = null;
@@ -740,43 +783,7 @@ async function generateDailyRecommendation(userId, quizDocs, goals) {
             ]
         };
 
-        let execution;
-        try {
-            // First attempt: Synchronous (Fast)
-            execution = await functions.createExecution(
-                'ai-chat',
-                JSON.stringify(requestBody),
-                false,
-                '/',
-                ExecutionMethod.POST,
-                { 'Content-Type': 'application/json' }
-            );
-        } catch (e) {
-            // If synchronous call times out (30s limit on Cloud), switch to Async + Polling
-            if (e.code === 408 || e.status === 408 || e.message?.toLowerCase().includes('timeout')) {
-                console.warn('Sync execution timed out, switching to async polling...');
-                const asyncExec = await functions.createExecution(
-                    'ai-chat',
-                    JSON.stringify(requestBody),
-                    true,
-                    '/',
-                    ExecutionMethod.POST,
-                    { 'Content-Type': 'application/json' }
-                );
-
-                // Poll for up to 40 seconds
-                let pollCount = 0;
-                while (pollCount < 20) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    execution = await functions.getExecution('ai-chat', asyncExec.$id);
-                    if (execution.status === 'completed') break;
-                    if (execution.status === 'failed') throw new Error('AI function execution failed');
-                    pollCount++;
-                }
-            } else {
-                throw e;
-            }
-        }
+        const execution = await safeExecuteFunction('ai-chat', requestBody);
 
         if (execution?.status !== 'completed') return null;
         const data = JSON.parse(execution.responseBody || '{}');
@@ -944,26 +951,32 @@ function closeTestDetails() {
 window.closeTestDetails = closeTestDetails;
 
 // --- FUNCTIONS ---
-function renderCatalog() {
+async function renderCatalog() {
     if (!catalogGrid) return;
     
+    catalogGrid.innerHTML = '<div class="col-span-full text-center py-4 text-slate-500">Loading tests...</div>';
+    
+    const allTests = await getAllTests();
+    
     catalogGrid.innerHTML = '';
-    catalog.forEach((item) => {
+    allTests.forEach((item) => {
         const div = document.createElement('div');
         div.className = "bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition cursor-pointer group flex flex-col h-full";
         div.onclick = () => loadCatalogTest(item);
+        
+        const sourceLabel = item.source === 'database' ? 'Custom' : 'Catalog';
         
         div.innerHTML = `
             <div class="flex justify-between items-start mb-4">
                 <div class="w-12 h-12 rounded-xl ${item.color || 'bg-blue-600'} bg-opacity-10 text-2xl flex items-center justify-center">
                     ${item.icon || '📝'}
                 </div>
-                <span class="bg-slate-100 text-slate-500 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Catalog</span>
+                <span class="bg-slate-100 text-slate-500 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">${sourceLabel}</span>
             </div>
             <h3 class="font-bold text-slate-800 text-lg mb-2 group-hover:text-blue-600 transition">${item.title}</h3>
             <p class="text-slate-500 text-sm mb-4 line-clamp-2">${item.description}</p>
             <div class="mt-auto pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-semibold text-slate-400">
-                <span>100 Qs</span>
+                <span>${item.testData ? item.testData.questions.length : 100} Qs</span>
                 <span>${Math.round(item.timeLimitSeconds / 60)} min</span>
             </div>
         `;
@@ -974,22 +987,31 @@ function renderCatalog() {
 async function loadCatalogTest(item) {
     try {
         showStartError("");
-        const res = await fetch(item.file);
-        if (!res.ok) throw new Error(`Failed to load ${item.file}`);
-        const raw = await res.json();
-        const test = normalizeTestData(raw, item.title);
-        // Ensure meta description from catalog overwrites json if json is empty
-        if(!test.description) test.description = item.description;
+        
+        let test;
+        if (item.source === 'database') {
+            // Load from database test data
+            test = normalizeTestData(item.testData, item.title);
+            if(!test.description) test.description = item.description;
+        } else {
+            // Load from JSON file
+            const res = await fetch(item.file);
+            if (!res.ok) throw new Error(`Failed to load ${item.file}`);
+            const raw = await res.json();
+            test = normalizeTestData(raw, item.title);
+            // Ensure meta description from catalog overwrites json if json is empty
+            if(!test.description) test.description = item.description;
+        }
         
         validateQuestions(test.questions);
         setCurrentTest(test, { 
-            sourceLabel: "Catalog",
+            sourceLabel: item.source === 'database' ? 'Custom' : 'Catalog',
             icon: item.icon,
             color: item.color,
             description: item.description 
         });
     } catch (err) {
-        showStartError("Could not load the catalog test. Please try again.");
+        showStartError("Could not load the test. Please try again.");
         console.error(err);
     }
 }
@@ -1514,14 +1536,10 @@ async function generateAIReview_OLD() {
         let execution;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                // Call Appwrite AI chat function (consolidated)
-                execution = await functions.createExecution(
-                    'ai-chat', // Function ID
-                    JSON.stringify(requestBody),
-                    false, // async = false (wait for response)
-                    '/', // path
-                    ExecutionMethod.POST,
-                    { 'Content-Type': 'application/json' }
+                // Call Appwrite AI chat function via safe helper (handles timeouts)
+                execution = await safeExecuteFunction(
+                    'ai-chat',
+                    JSON.stringify(requestBody)
                 );
 
                 // Check status code
@@ -2858,14 +2876,7 @@ async function gradeTestMakerAttempt(payload) {
         ]
     };
 
-    const execution = await functions.createExecution(
-        'ai-chat',
-        JSON.stringify(requestBody),
-        false,
-        '/',
-        ExecutionMethod.POST,
-        { 'Content-Type': 'application/json' }
-    );
+    const execution = await safeExecuteFunction('ai-chat', requestBody);
 
     if (execution.status !== 'completed') {
         throw new Error('AI grading failed. Please try again.');

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoStudy - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-bg); color: var(--color-text); font-family: var(--font-main);">
+
+    <!-- Header -->
+    <header class="text-white p-3 sm:p-4 shadow-lg flex items-center z-10 shrink-0 gap-2 sm:gap-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); border-bottom: 1px solid var(--color-border);">
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div class="font-extrabold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm tracking-wide" style="background-color: var(--color-white); color: var(--color-primary); font-family: var(--font-heading);">MoStudy</div>
+            <h1 class="font-semibold text-sm sm:text-lg tracking-tight truncate" style="font-family: var(--font-heading);">Admin Dashboard</h1>
+        </div>
+        
+        <nav class="hidden md:flex items-center gap-6 lg:gap-8 ml-6">
+            <a href="/" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Home</span>
+            </a>
+            <a href="/study" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Study</span>
+            </a>
+            <a href="/roleplay" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Role Plays</span>
+            </a>
+            <a href="/account" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
+                <span class="border-b-2 border-transparent pb-0.5">Account</span>
+            </a>
+            <a href="/admin" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5" id="admin-nav-link">
+                <span class="border-b-2 border-white pb-0.5">Admin</span>
+            </a>
+        </nav>
+
+        <div class="flex items-center gap-2 sm:gap-4 ml-auto">
+            <button id="mobile-menu-btn" class="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg border border-white/30 text-white/95" style="background-color: rgba(255,255,255,0.12);" aria-label="Open navigation">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div id="mobile-nav" class="mobile-nav" aria-hidden="true">
+        <div class="mobile-nav__overlay" data-mobile-overlay></div>
+        <div class="mobile-nav__panel" role="dialog" aria-modal="true" aria-label="Site navigation">
+            <div class="mobile-nav__header">
+                <div class="mobile-nav__brand">MoStudy</div>
+                <button class="mobile-nav__close" type="button" data-mobile-close aria-label="Close navigation">Close</button>
+            </div>
+            <nav class="mobile-nav__links">
+                <a href="/" class="mobile-nav__link">Home</a>
+                <a href="/study" class="mobile-nav__link">Study</a>
+                <a href="/roleplay" class="mobile-nav__link">Role Plays</a>
+                <a href="/account" class="mobile-nav__link">Account</a>
+                <a href="/admin" class="mobile-nav__link is-active" id="admin-mobile-link">Admin</a>
+            </nav>
+            <div class="mobile-nav__footer">Manage tests and content.</div>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow overflow-y-auto" style="background-color: var(--color-bg);">
+        
+        <!-- Access Denied Screen -->
+        <div id="access-denied-screen" class="hidden h-full flex items-center justify-center p-4">
+            <div class="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
+                <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Access Denied</h2>
+                <p class="text-slate-600 mb-6">You need admin privileges to access this page.</p>
+                <a href="/" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Go to Home</a>
+            </div>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="h-full flex items-center justify-center">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-slate-600">Loading admin dashboard...</p>
+            </div>
+        </div>
+
+        <!-- Admin Dashboard -->
+        <div id="admin-dashboard" class="hidden h-full flex flex-col">
+            
+            <!-- Dashboard Header -->
+            <div class="bg-white border-b border-slate-200 p-4 sm:p-6">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-slate-800">Test Management</h2>
+                            <p class="text-slate-600 mt-1">Create and manage practice exams</p>
+                        </div>
+                        <button id="create-test-btn" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold flex items-center justify-center gap-2 shadow-sm">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span>Create New Test</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tests List -->
+            <div class="flex-grow overflow-y-auto p-4 sm:p-6">
+                <div class="max-w-7xl mx-auto">
+                    <div id="tests-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Tests will be loaded here -->
+                    </div>
+                    <div id="empty-state" class="hidden text-center py-16">
+                        <div class="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-semibold text-slate-700 mb-2">No Tests Yet</h3>
+                        <p class="text-slate-500 mb-6">Get started by creating your first test</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Test Editor Modal -->
+    <div id="test-editor-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full my-8 max-h-[90vh] flex flex-col">
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b border-slate-200">
+                <h3 id="modal-title" class="text-2xl font-bold text-slate-800">Create New Test</h3>
+                <button id="close-modal-btn" class="text-slate-400 hover:text-slate-600 transition p-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="flex-grow overflow-y-auto p-6">
+                
+                <!-- Test Info Section -->
+                <div class="space-y-4 mb-8">
+                    <h4 class="text-lg font-semibold text-slate-800 mb-4">Test Information</h4>
+                    
+                    <div>
+                        <label for="test-id" class="block text-sm font-medium text-slate-700 mb-2">Test ID *</label>
+                        <input type="text" id="test-id" placeholder="e.g., fbla-marketing-2025" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                        <p class="text-xs text-slate-500 mt-1">Unique identifier (lowercase, use hyphens)</p>
+                    </div>
+
+                    <div>
+                        <label for="test-title" class="block text-sm font-medium text-slate-700 mb-2">Title *</label>
+                        <input type="text" id="test-title" placeholder="e.g., Marketing" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                    </div>
+
+                    <div>
+                        <label for="test-description" class="block text-sm font-medium text-slate-700 mb-2">Description *</label>
+                        <textarea id="test-description" rows="2" placeholder="e.g., FBLA Objective Test • Marketing Strategies" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="test-time-limit" class="block text-sm font-medium text-slate-700 mb-2">Time Limit (seconds) *</label>
+                            <input type="number" id="test-time-limit" value="3000" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                        </div>
+                        <div>
+                            <label for="test-icon" class="block text-sm font-medium text-slate-700 mb-2">Icon Emoji</label>
+                            <input type="text" id="test-icon" placeholder="📚" maxlength="2" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="test-color" class="block text-sm font-medium text-slate-700 mb-2">Color Class</label>
+                        <select id="test-color" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="bg-blue-600">Blue</option>
+                            <option value="bg-green-600">Green</option>
+                            <option value="bg-orange-600">Orange</option>
+                            <option value="bg-red-600">Red</option>
+                            <option value="bg-purple-600">Purple</option>
+                            <option value="bg-indigo-600">Indigo</option>
+                            <option value="bg-cyan-600">Cyan</option>
+                            <option value="bg-emerald-600">Emerald</option>
+                            <option value="bg-amber-600">Amber</option>
+                            <option value="bg-slate-700">Slate</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Questions Section -->
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-lg font-semibold text-slate-800">Questions</h4>
+                        <button id="add-question-btn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span>Add Question</span>
+                        </button>
+                    </div>
+
+                    <div id="questions-container" class="space-y-4">
+                        <!-- Questions will be added here -->
+                    </div>
+
+                    <div id="questions-empty-state" class="text-center py-8 border-2 border-dashed border-slate-300 rounded-lg">
+                        <p class="text-slate-500">No questions yet. Click "Add Question" to get started.</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex flex-col sm:flex-row gap-3 p-6 border-t border-slate-200">
+                <button id="save-test-btn" class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+                    Save Test
+                </button>
+                <button id="cancel-test-btn" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-semibold">
+                    Cancel
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "appwrite": "https://cdn.jsdelivr.net/npm/appwrite@14.0.1/+esm"
+            }
+        }
+    </script>
+    <script src="theme.js" defer></script>
+    <script src="nav.js" defer></script>
+    <script type="module" src="auth.js" defer></script>
+    <script type="module" src="admin.js" defer></script>
+
+</body>
+</html>

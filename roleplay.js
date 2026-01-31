@@ -4,7 +4,7 @@
  */
 
 // Import Appwrite config
-import { databases, functions, DB_ID, COLLECTION_HISTORY, APPWRITE_ENDPOINT } from './lib/appwrite.js';
+import { databases, functions, DB_ID, COLLECTION_HISTORY, APPWRITE_ENDPOINT, safeExecuteFunction } from './lib/appwrite.js';
 import { ID, ExecutionMethod } from 'appwrite';
 
 // ==================== CONFIGURATION ====================
@@ -3132,15 +3132,8 @@ The Board has selected **Japan** as the next target market due to its high tech 
 
             console.log(`[AI-CALL-${callId}] Calling Appwrite function: ${AI_FUNCTION_ID}`);
             
-            // Call Appwrite function instead of direct API call
-            const execution = await functions.createExecution(
-                AI_FUNCTION_ID,
-                JSON.stringify(requestBody),
-                false, // async = false (wait for response)
-                '/', // path
-                ExecutionMethod.POST,
-                { 'Content-Type': 'application/json' }
-            );
+            // Call Appwrite function via safe helper (handles timeouts)
+            const execution = await safeExecuteFunction(AI_FUNCTION_ID, requestBody);
 
             const responseTime = new Date().toISOString();
             console.log(`[AI-CALL-${callId}] Function execution completed at ${responseTime}:`, {

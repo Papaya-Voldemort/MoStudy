@@ -46,6 +46,17 @@
                 "create(\"users\")",
                 "update(\"users\")"
             ]
+        },
+        {
+            "$id": "tests",
+            "databaseId": "mostudy",
+            "name": "Tests",
+            "permissions": [
+                "read(\"any\")",
+                "create(\"label:admin\")",
+                "update(\"label:admin\")",
+                "delete(\"label:admin\")"
+            ]
         }
     ]
 }

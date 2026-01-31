@@ -244,6 +244,11 @@ if (document.readyState === 'loading') {
     initAuth();
 }
 
+// Check if current user is admin
+export const isUserAdmin = () => {
+    return currentUser && currentUser.labels && currentUser.labels.includes('admin');
+};
+
 // Expose to window for other scripts
 window.login = login;
 window.logout = logout;
@@ -252,6 +257,7 @@ window.loadSettings = loadSettings;
 window.saveSettings = saveSettings;
 window.authInitialized = true; 
 window.getCurrentUser = () => currentUser;
+window.isUserAdmin = isUserAdmin;
 
 // Dummy auth0Client for compatibility
 window.auth0Client = {
