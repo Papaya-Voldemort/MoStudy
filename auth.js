@@ -1,8 +1,10 @@
 // Imports from our initialized Appwrite client.
 // We also import databases to handle user preferences.
-import { account, databases, DB_ID, COLLECTION_USERS } from './lib/appwrite.js';
+import { account, databases, DB_ID, COLLECTION_USERS, APPWRITE_PROJECT_ID } from './lib/appwrite.js';
 import { SmartCache } from './lib/cache.js';
 import { OAuthProvider, ID } from 'appwrite';
+
+console.log('[MoStudy Auth] Using Project ID from lib/appwrite.js:', APPWRITE_PROJECT_ID);
 
 // Global user state
 let currentUser = null;
