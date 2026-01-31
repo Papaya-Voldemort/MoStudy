@@ -93,9 +93,9 @@
         <div id="admin-dashboard" class="hidden h-full flex flex-col">
             
             <!-- Dashboard Header -->
-            <div class="bg-white border-b border-slate-200 p-4 sm:p-6">
-                <div class="max-w-7xl mx-auto">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div class="bg-white border-b border-slate-200 p-3 sm:p-4">
+                <div class="max-w-full mx-auto px-2">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
                             <h2 class="text-2xl font-bold text-slate-800">Test Management</h2>
                             <p class="text-slate-600 mt-1">Create and manage practice exams</p>
@@ -111,8 +111,8 @@
             </div>
 
             <!-- Tests List -->
-            <div class="flex-grow overflow-y-auto p-4 sm:p-6">
-                <div class="max-w-7xl mx-auto">
+            <div class="flex-grow overflow-y-auto p-3 sm:p-4">
+                <div class="max-w-full mx-auto px-2">
                     <div id="tests-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <!-- Tests will be loaded here -->
                     </div>
@@ -137,7 +137,7 @@
         <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full my-8 max-h-[90vh] flex flex-col">
             
             <!-- Modal Header -->
-            <div class="flex items-center justify-between p-6 border-b border-slate-200">
+            <div class="flex items-center justify-between p-4 sm:p-6 border-b border-slate-200">
                 <h3 id="modal-title" class="text-2xl font-bold text-slate-800">Create New Test</h3>
                 <button id="close-modal-btn" class="text-slate-400 hover:text-slate-600 transition p-2">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@
             </div>
 
             <!-- Modal Body -->
-            <div class="flex-grow overflow-y-auto p-6">
+            <div class="flex-grow overflow-y-auto p-4 sm:p-6">
                 
                 <!-- Test Info Section -->
                 <div class="space-y-4 mb-8">
@@ -181,19 +181,20 @@
                     </div>
 
                     <div>
-                        <label for="test-color" class="block text-sm font-medium text-slate-700 mb-2">Color Class</label>
-                        <select id="test-color" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            <option value="bg-blue-600">Blue</option>
-                            <option value="bg-green-600">Green</option>
-                            <option value="bg-orange-600">Orange</option>
-                            <option value="bg-red-600">Red</option>
-                            <option value="bg-purple-600">Purple</option>
-                            <option value="bg-indigo-600">Indigo</option>
-                            <option value="bg-cyan-600">Cyan</option>
-                            <option value="bg-emerald-600">Emerald</option>
-                            <option value="bg-amber-600">Amber</option>
-                            <option value="bg-slate-700">Slate</option>
-                        </select>
+                        <label for="test-color" class="block text-sm font-medium text-slate-700 mb-2">Color</label>
+                        <div class="flex gap-2">
+                            <input type="color" id="test-color-picker" class="h-10 w-16 border border-slate-300 rounded-lg cursor-pointer" value="#0066cc" title="Choose color">
+                            <input type="text" id="test-color" placeholder="#0066cc or bg-blue-600" class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" value="bg-blue-600">
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">Use hex color (#0066cc) or Tailwind class (bg-blue-600)</p>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="test-archived" class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700">Archive this test (hide from study page)</span>
+                        </label>
+                        <p class="text-xs text-slate-500 mt-1 ml-6">Archived tests won't show on the study page but can be restored</p>
                     </div>
                 </div>
 
@@ -221,7 +222,7 @@
             </div>
 
             <!-- Modal Footer -->
-            <div class="flex flex-col sm:flex-row gap-3 p-6 border-t border-slate-200">
+            <div class="flex flex-col sm:flex-row gap-3 p-4 sm:p-6 border-t border-slate-200">
                 <button id="save-test-btn" class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
                     Save Test
                 </button>
@@ -240,10 +241,10 @@
             }
         }
     </script>
-    <script src="theme.js?v=20260131" defer></script>
-    <script src="nav.js?v=20260131" defer></script>
-    <script type="module" src="admin.js?v=20260131" defer></script>
-    <script type="module" src="auth.js?v=20260131" defer></script>
+    <script src="theme.js?v=20260131b" defer></script>
+    <script src="nav.js?v=20260131b" defer></script>
+    <script type="module" src="admin.js?v=20260131b" defer></script>
+    <script type="module" src="auth.js?v=20260131b" defer></script>
 
 </body>
 </html>

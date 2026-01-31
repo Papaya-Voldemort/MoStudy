@@ -87,13 +87,22 @@ function renderTests() {
         const questionCount = testData.questions ? testData.questions.length : 0;
         const color = testData.color || 'bg-blue-600';
         const icon = testData.icon || '📝';
+        const isArchived = testData.archived || false;
+        
+        // Check if color is hex or Tailwind class
+        const isHexColor = color.startsWith('#');
+        const colorStyle = isHexColor ? `style="background-color: ${color};"` : '';
+        const colorClass = isHexColor ? '' : color;
         
         return `
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition overflow-hidden">
-                <div class="${color} p-4 text-white">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition overflow-hidden ${isArchived ? 'opacity-60' : ''}">
+                <div class="${colorClass} p-4 text-white" ${colorStyle}>
                     <div class="flex items-center justify-between mb-2">
                         <span class="text-3xl">${icon}</span>
-                        <span class="text-xs bg-white/20 px-2 py-1 rounded">${questionCount} questions</span>
+                        <div class="flex items-center gap-2">
+                            ${isArchived ? '<span class="text-xs bg-white/30 px-2 py-1 rounded font-semibold">ARCHIVED</span>' : ''}
+                            <span class="text-xs bg-white/20 px-2 py-1 rounded">${questionCount} questions</span>
+                        </div>
                     </div>
                     <h3 class="font-bold text-lg mb-1">${escapeHtml(testData.title)}</h3>
                     <p class="text-sm text-white/90 line-clamp-2">${escapeHtml(testData.description)}</p>
@@ -107,7 +116,7 @@ function renderTests() {
                         <span>•</span>
                         <span>ID: ${escapeHtml(testData.id)}</span>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 mb-2">
                         <button onclick="editTest('${test.$id}')" class="flex-1 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold text-sm">
                             Edit
                         </button>
@@ -115,6 +124,9 @@ function renderTests() {
                             Delete
                         </button>
                     </div>
+                    <button onclick="toggleArchive('${test.$id}')" class="w-full px-4 py-2 ${isArchived ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'} rounded-lg transition font-semibold text-sm">
+                        ${isArchived ? 'Unarchive' : 'Archive'}
+                    </button>
                 </div>
             </div>
         `;
@@ -128,6 +140,21 @@ function bindEvents() {
     document.getElementById('cancel-test-btn').addEventListener('click', closeTestEditor);
     document.getElementById('save-test-btn').addEventListener('click', saveTest);
     document.getElementById('add-question-btn').addEventListener('click', addQuestion);
+    
+    // Sync color picker with text input
+    const colorPicker = document.getElementById('test-color-picker');
+    const colorInput = document.getElementById('test-color');
+    
+    colorPicker.addEventListener('input', (e) => {
+        colorInput.value = e.target.value;
+    });
+    
+    colorInput.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+        if (value.startsWith('#') && /^#[0-9A-F]{6}$/i.test(value)) {
+            colorPicker.value = value;
+        }
+    });
     
     // Close modal on backdrop click
     document.getElementById('test-editor-modal').addEventListener('click', (e) => {
@@ -176,6 +203,8 @@ function clearEditor() {
     document.getElementById('test-time-limit').value = '3000';
     document.getElementById('test-icon').value = '';
     document.getElementById('test-color').value = 'bg-blue-600';
+    document.getElementById('test-color-picker').value = '#0066cc';
+    document.getElementById('test-archived').checked = false;
     document.getElementById('questions-container').innerHTML = '';
     document.getElementById('questions-empty-state').classList.remove('hidden');
 }
@@ -189,7 +218,17 @@ function loadTestIntoEditor(test) {
     document.getElementById('test-description').value = testData.description || '';
     document.getElementById('test-time-limit').value = testData.timeLimitSeconds || 3000;
     document.getElementById('test-icon').value = testData.icon || '';
-    document.getElementById('test-color').value = testData.color || 'bg-blue-600';
+    
+    const color = testData.color || 'bg-blue-600';
+    document.getElementById('test-color').value = color;
+    // If it's a hex color, update the color picker
+    if (color.startsWith('#')) {
+        document.getElementById('test-color-picker').value = color;
+    } else {
+        document.getElementById('test-color-picker').value = '#0066cc';
+    }
+    
+    document.getElementById('test-archived').checked = testData.archived || false;
     
     // Load questions
     const questionsContainer = document.getElementById('questions-container');
@@ -302,7 +341,8 @@ async function saveTest() {
         const description = document.getElementById('test-description').value.trim();
         const timeLimitSeconds = parseInt(document.getElementById('test-time-limit').value);
         const icon = document.getElementById('test-icon').value.trim();
-        const color = document.getElementById('test-color').value;
+        const color = document.getElementById('test-color').value.trim() || 'bg-blue-600';
+        const archived = document.getElementById('test-archived').checked;
         
         // Validation
         if (!testId || !title || !description || !timeLimitSeconds) {
@@ -353,6 +393,7 @@ async function saveTest() {
             timeLimitSeconds,
             icon,
             color,
+            archived,
             questions
         };
         
@@ -421,6 +462,31 @@ window.deleteTest = async function(testId) {
 // Edit test
 window.editTest = function(testId) {
     openTestEditor(testId);
+};
+
+// Toggle archive status
+window.toggleArchive = async function(testId) {
+    const test = allTests.find(t => t.$id === testId);
+    if (!test) return;
+    
+    const testData = typeof test.test_data === 'string' ? JSON.parse(test.test_data) : test.test_data;
+    testData.archived = !testData.archived;
+    
+    try {
+        await databases.updateDocument(
+            DB_ID,
+            COLLECTION_TESTS,
+            testId,
+            {
+                test_data: JSON.stringify(testData)
+            }
+        );
+        await loadTests();
+        showNotification(`Test ${testData.archived ? 'archived' : 'unarchived'} successfully`, 'success');
+    } catch (error) {
+        console.error('Error toggling archive:', error);
+        alert('Error updating test: ' + error.message);
+    }
 };
 
 // Show notification

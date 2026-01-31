@@ -11,9 +11,10 @@ let currentUser = null;
 
 // Initialize Auth
 export const initAuth = async () => {
+    console.log('[Auth] Initializing authentication...');
     try {
         currentUser = await account.get();
-        console.log('User authenticated:', currentUser);
+        console.log('[Auth] User authenticated:', currentUser.email);
         updateUI(true, currentUser);
         window.dispatchEvent(new CustomEvent('auth-initialized', { detail: currentUser }));
         
@@ -25,7 +26,7 @@ export const initAuth = async () => {
 
     } catch (e) {
         // Not logged in
-        console.log('User not logged in');
+        console.log('[Auth] User not logged in:', e.message);
         updateUI(false);
         window.dispatchEvent(new CustomEvent('auth-initialized', { detail: null }));
     }
@@ -34,10 +35,14 @@ export const initAuth = async () => {
 
 export const login = async () => {
     try {
+        // Use absolute URLs for OAuth callback
+        const successUrl = window.location.origin + window.location.pathname;
+        const failureUrl = window.location.origin + window.location.pathname;
+        
         await account.createOAuth2Session(
             OAuthProvider.Google,
-            window.location.href, 
-            window.location.href
+            successUrl,
+            failureUrl
         );
     } catch (e) {
         console.error('Login failed:', e);
