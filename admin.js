@@ -126,14 +126,14 @@ function renderTests() {
                         <span>ID: ${escapeHtml(testData.id)}</span>
                     </div>
                     <div class="flex gap-2 mb-2">
-                        <button onclick="editTest('${test.$id}')" class="flex-1 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold text-sm">
+                        <button onclick="editTest('${test.$id}')" class="flex-1 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold text-sm" aria-label="Edit ${escapeHtml(testData.title)}">
                             Edit
                         </button>
-                        <button onclick="deleteTest('${test.$id}')" class="px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition font-semibold text-sm">
+                        <button onclick="deleteTest('${test.$id}')" class="px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition font-semibold text-sm" aria-label="Delete ${escapeHtml(testData.title)}">
                             Delete
                         </button>
                     </div>
-                    <button onclick="toggleArchive('${test.$id}')" class="w-full px-4 py-2 ${isArchived ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'} rounded-lg transition font-semibold text-sm">
+                    <button onclick="toggleArchive('${test.$id}')" class="w-full px-4 py-2 ${isArchived ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'} rounded-lg transition font-semibold text-sm" aria-label="${isArchived ? 'Unarchive' : 'Archive'} ${escapeHtml(testData.title)}">
                         ${isArchived ? 'Unarchive' : 'Archive'}
                     </button>
                 </div>
@@ -281,7 +281,7 @@ function renderSidebar() {
         const hasError = !q.text || !q.options || q.options.some(o => !o);
         
         return `
-            <button onclick="navigateToItem(${index})" class="question-nav-item group ${isActive ? 'active' : ''} ${hasError ? 'error' : ''}">
+            <button onclick="navigateToItem(${index})" class="question-nav-item group ${isActive ? 'active' : ''} ${hasError ? 'error' : ''}" aria-current="${isActive ? 'true' : 'false'}" aria-label="Question ${index + 1}">
                 <div class="w-6 h-6 rounded-md ${isActive ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'} flex items-center justify-center text-xs font-bold shrink-0 transition-colors">
                     ${index + 1}
                 </div>
@@ -294,12 +294,12 @@ function renderSidebar() {
                     </div>
                 </div>
                 <div class="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5" onclick="event.stopPropagation()">
-                    <div onclick="moveQuestion(${index}, -1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === 0 ? 'invisible' : ''}" title="Move Up">
+                    <button type="button" onclick="moveQuestion(${index}, -1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === 0 ? 'invisible' : ''}" title="Move Up" aria-label="Move question ${index + 1} up">
                         <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                    </div>
-                    <div onclick="moveQuestion(${index}, 1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === currentTestData.questions.length - 1 ? 'invisible' : ''}" title="Move Down">
-                         <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                    </div>
+                    </button>
+                    <button type="button" onclick="moveQuestion(${index}, 1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === currentTestData.questions.length - 1 ? 'invisible' : ''}" title="Move Down" aria-label="Move question ${index + 1} down">
+                        <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
                 </div>
             </button>
         `;
@@ -837,8 +837,13 @@ function showVersionHistory() {
     // Create modal for version history
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4';
+    modal.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            modal.remove();
+        }
+    });
     modal.innerHTML = `
-        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" role="dialog" aria-modal="true" aria-label="Version history">
             <div class="flex items-center justify-between p-6 border-b border-slate-200">
                 <h3 class="text-2xl font-bold text-slate-800">Version History</h3>
                 <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600 transition p-2">
@@ -856,6 +861,7 @@ function showVersionHistory() {
     `;
     
     document.body.appendChild(modal);
+    modal.querySelector('button')?.focus();
 }
 
 window.restoreVersion = function(index) {

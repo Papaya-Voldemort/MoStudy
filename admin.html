@@ -72,6 +72,8 @@
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-bg); color: var(--color-text); font-family: var(--font-main);">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div id="offline-banner" class="offline-banner" role="status" aria-live="polite">You are offline. Some features may be unavailable.</div>
 
     <!-- Header -->
     <header class="text-white p-3 sm:p-4 shadow-lg flex items-center z-10 shrink-0 gap-2 sm:gap-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); border-bottom: 1px solid var(--color-border);">
@@ -80,7 +82,7 @@
             <h1 class="font-semibold text-sm sm:text-lg tracking-tight truncate" style="font-family: var(--font-heading);">Admin Dashboard</h1>
         </div>
         
-        <nav class="hidden md:flex items-center gap-6 lg:gap-8 ml-6">
+        <nav class="hidden md:flex items-center gap-6 lg:gap-8 ml-6" aria-label="Primary">
             <a href="/" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
                 <span class="border-b-2 border-transparent pb-0.5">Home</span>
             </a>
@@ -93,7 +95,7 @@
             <a href="/account" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5">
                 <span class="border-b-2 border-transparent pb-0.5">Account</span>
             </a>
-            <a href="/admin" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5" id="admin-nav-link">
+            <a href="/admin" class="text-white hover:opacity-80 transition font-bold text-sm flex items-center py-1.5" id="admin-nav-link" aria-current="page">
                 <span class="border-b-2 border-white pb-0.5">Admin</span>
             </a>
         </nav>
@@ -111,24 +113,24 @@
 
     <div id="mobile-nav" class="mobile-nav" aria-hidden="true">
         <div class="mobile-nav__overlay" data-mobile-overlay></div>
-        <div class="mobile-nav__panel" role="dialog" aria-modal="true" aria-label="Site navigation">
+        <div class="mobile-nav__panel" role="dialog" aria-modal="true" aria-label="Site navigation" tabindex="-1">
             <div class="mobile-nav__header">
                 <div class="mobile-nav__brand">MoStudy</div>
                 <button class="mobile-nav__close" type="button" data-mobile-close aria-label="Close navigation">Close</button>
             </div>
-            <nav class="mobile-nav__links">
+            <nav class="mobile-nav__links" aria-label="Mobile">
                 <a href="/" class="mobile-nav__link">Home</a>
                 <a href="/study" class="mobile-nav__link">Study</a>
                 <a href="/roleplay" class="mobile-nav__link">Role Plays</a>
                 <a href="/account" class="mobile-nav__link">Account</a>
-                <a href="/admin" class="mobile-nav__link is-active" id="admin-mobile-link">Admin</a>
+                <a href="/admin" class="mobile-nav__link is-active" id="admin-mobile-link" aria-current="page">Admin</a>
             </nav>
             <div class="mobile-nav__footer">Manage tests and content.</div>
         </div>
     </div>
 
     <!-- Main Content Area -->
-    <main class="flex-grow overflow-y-auto" style="background-color: var(--color-bg);">
+    <main id="main-content" class="flex-grow overflow-y-auto" style="background-color: var(--color-bg);">
         
         <!-- Access Denied Screen -->
         <div id="access-denied-screen" class="hidden h-full flex items-center justify-center p-4">
@@ -477,6 +479,7 @@
     </script>
     <script src="theme.js?v=20260131b" defer></script>
     <script src="nav.js?v=20260131b" defer></script>
+    <script src="offline.js?v=20260201a" defer></script>
     <script type="module" src="admin.js?v=20260131f" defer></script>
     <script type="module" src="auth.js?v=20260131b"></script>
 

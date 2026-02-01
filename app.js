@@ -846,6 +846,16 @@ function setupEventListeners() {
         });
     }
 
+    const uploadCard = document.querySelector('[data-action="upload-json"]');
+    if (uploadCard) {
+        uploadCard.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                jsonUpload?.click();
+            }
+        });
+    }
+
     if (searchInput) searchInput.addEventListener('input', filterResults);
     if (statusFilter) statusFilter.addEventListener('change', filterResults);
     if (categoryFilter) categoryFilter.addEventListener('change', filterResults);
@@ -921,6 +931,14 @@ function setupEventListeners() {
                 break;
         }
     });
+
+    document.addEventListener('keydown', (event) => {
+        const actionTarget = event.target.closest('[data-action]');
+        if (!actionTarget) return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        actionTarget.click();
+    });
 }
 
 // --- KEYBOARD LISTENERS ---
@@ -987,7 +1005,7 @@ async function renderCatalog() {
 async function loadCatalogTest(item) {
     try {
         showStartError("");
-        
+
         let test;
         if (item.source === 'database') {
             // Load from database test data
@@ -995,9 +1013,17 @@ async function loadCatalogTest(item) {
             if(!test.description) test.description = item.description;
         } else {
             // Load from JSON file
-            const res = await fetch(item.file);
-            if (!res.ok) throw new Error(`Failed to load ${item.file}`);
-            const raw = await res.json();
+            const cacheKey = `mostudy_test_${item.file}`;
+            const cached = localStorage.getItem(cacheKey);
+            let raw;
+            if (cached) {
+                raw = JSON.parse(cached);
+            } else {
+                const res = await fetch(item.file);
+                if (!res.ok) throw new Error(`Failed to load ${item.file}`);
+                raw = await res.json();
+                localStorage.setItem(cacheKey, JSON.stringify(raw));
+            }
             test = normalizeTestData(raw, item.title);
             // Ensure meta description from catalog overwrites json if json is empty
             if(!test.description) test.description = item.description;
@@ -2310,9 +2336,16 @@ async function resolveFlashcardSource() {
 
     const catalogItem = catalog.find((item) => item.id === source);
     if (!catalogItem) return null;
+    const cacheKey = `mostudy_test_${catalogItem.file}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+        const raw = JSON.parse(cached);
+        return normalizeTestData(raw, catalogItem.title);
+    }
     const res = await fetch(catalogItem.file);
     if (!res.ok) throw new Error('Failed to load flashcard source.');
     const raw = await res.json();
+    localStorage.setItem(cacheKey, JSON.stringify(raw));
     return normalizeTestData(raw, catalogItem.title);
 }
 
@@ -2754,10 +2787,19 @@ async function resolveTestMakerSource() {
     if (testMakerSourceCache[selected]) return testMakerSourceCache[selected];
     const item = catalog.find((entry) => entry.id === selected);
     if (!item) return null;
-    const res = await fetch(item.file);
-    if (!res.ok) throw new Error(`Failed to load ${item.file}`);
-    const raw = await res.json();
-    const test = normalizeTestData(raw, item.title);
+    const cacheKey = `mostudy_test_${item.file}`;
+    const cached = localStorage.getItem(cacheKey);
+    let test;
+    if (cached) {
+        const raw = JSON.parse(cached);
+        test = normalizeTestData(raw, item.title);
+    } else {
+        const res = await fetch(item.file);
+        if (!res.ok) throw new Error(`Failed to load ${item.file}`);
+        const raw = await res.json();
+        localStorage.setItem(cacheKey, JSON.stringify(raw));
+        test = normalizeTestData(raw, item.title);
+    }
     validateQuestions(test.questions);
     testMakerSourceCache[selected] = test;
     return test;

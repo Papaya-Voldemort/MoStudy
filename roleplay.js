@@ -558,7 +558,16 @@ function loadEventCatalog() {
     EVENT_MANIFEST.forEach(event => {
         const card = document.createElement('div');
         card.className = "bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-lg transition cursor-pointer group";
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Start ${event.title} role play`);
         card.onclick = () => selectEvent(event);
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                selectEvent(event);
+            }
+        });
 
         card.innerHTML = `
             <div class="flex items-start gap-4">
@@ -651,7 +660,9 @@ async function startScenarioGeneration() {
         console.error('Error starting session:', error);
         // Determine error type
         let errorMsg = 'Failed to generate scenario. ';
-        if (error.message.toLowerCase().includes('sign in')) {
+        if (!navigator.onLine) {
+            errorMsg = 'You are offline. Connect to the internet to generate a new scenario.';
+        } else if (error.message.toLowerCase().includes('sign in')) {
             errorMsg = 'Sign in is required to use AI roleplay features. Please sign in from the Account page.';
         } else if (error.message.includes('AI service')) {
             errorMsg += 'The AI service is currently unavailable. Please try again in a moment.';
@@ -674,10 +685,18 @@ async function startScenarioGeneration() {
 function showErrorNotification(message) {
     const overlay = document.createElement('div');
     overlay.className = 'error-overlay';
+    overlay.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') overlay.remove();
+    });
+    overlay.tabIndex = -1;
 
     const modal = document.createElement('div');
     modal.className = 'error-modal';
     modal.addEventListener('click', (event) => event.stopPropagation());
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Error message');
+    modal.setAttribute('tabindex', '-1');
 
     const iconWrap = document.createElement('div');
     iconWrap.className = 'error-modal-icon';
@@ -708,10 +727,17 @@ function showErrorNotification(message) {
 
     overlay.addEventListener('click', () => overlay.remove());
     document.body.appendChild(overlay);
+    overlay.focus();
+    modal.focus();
+    dismissBtn.focus();
 }
 
 async function loadEventExamples(event) {
-    const examples = [];
+    const cacheKey = `mostudy_roleplay_examples_${event.id}`;
+    const overviewKey = `mostudy_roleplay_overview_${event.id}`;
+    const cachedExamples = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+    const cachedOverview = localStorage.getItem(overviewKey);
+    let examples = [];
     const basePath = event.dataPath + event.examplesFolder;
 
     // Load all example files
@@ -727,20 +753,29 @@ async function loadEventExamples(event) {
         }
     }
 
+    if (examples.length === 0 && cachedExamples.length > 0) {
+        examples = cachedExamples;
+    }
+
     if (examples.length === 0) {
         throw new Error('No examples found for this event');
     }
 
     appState.eventExamples = examples;
+    localStorage.setItem(cacheKey, JSON.stringify(examples));
 
     // Also load event overview
     try {
         const overviewResponse = await fetch(event.dataPath + event.overviewFile);
         if (overviewResponse.ok) {
             appState.eventOverview = await overviewResponse.text();
+            localStorage.setItem(overviewKey, appState.eventOverview);
         }
     } catch (e) {
         console.warn('Could not load event overview:', e);
+        if (cachedOverview) {
+            appState.eventOverview = cachedOverview;
+        }
     }
 }
 

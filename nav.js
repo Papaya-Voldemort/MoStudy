@@ -5,18 +5,26 @@ function initMobileNav() {
 
     const overlay = mobileNav.querySelector("[data-mobile-overlay]");
     const closeButton = mobileNav.querySelector("[data-mobile-close]");
+    const panel = mobileNav.querySelector(".mobile-nav__panel");
     const links = mobileNav.querySelectorAll("a");
+    const focusableSelectors = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    let lastFocused = null;
 
     const openNav = () => {
+        lastFocused = document.activeElement;
         mobileNav.classList.add("is-open");
         mobileNav.setAttribute("aria-hidden", "false");
         document.body.classList.add("nav-open");
+        panel?.focus();
     };
 
     const closeNav = () => {
         mobileNav.classList.remove("is-open");
         mobileNav.setAttribute("aria-hidden", "true");
         document.body.classList.remove("nav-open");
+        if (lastFocused && typeof lastFocused.focus === "function") {
+            lastFocused.focus();
+        }
     };
 
     menuButton.addEventListener("click", openNav);
@@ -28,6 +36,19 @@ function initMobileNav() {
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             closeNav();
+        }
+        if (event.key === "Tab" && mobileNav.classList.contains("is-open")) {
+            const focusable = Array.from(panel?.querySelectorAll(focusableSelectors) || []);
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
         }
     });
 }
