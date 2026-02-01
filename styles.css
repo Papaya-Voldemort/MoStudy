@@ -45,19 +45,99 @@ body {
   left: 0.75rem;
 }
 
+/* Offline Banner */
 .offline-banner {
-  display: none;
   width: 100%;
-  background: #fee2e2;
-  color: #7f1d1d;
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: #ffffff;
   text-align: center;
-  padding: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
   font-weight: 600;
-  border-bottom: 1px solid #fecaca;
+  font-size: 0.9rem;
+  border-bottom: 2px solid #a81b2b;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.15);
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 100;
+  transition: all 0.3s ease;
+  display: none;
+  max-height: 0;
+  overflow: hidden;
 }
 
 .offline-banner.is-visible {
-  display: block;
+  display: flex;
+  max-height: 100px;
+  animation: slideDown 0.3s ease-out;
+}
+
+.offline-banner:not(.is-visible) {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    max-height: 100px;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 1;
+    max-height: 100px;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-100%);
+  }
+}
+
+.offline-banner::before {
+  content: '📡';
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Dark mode support for offline banner */
+@media (prefers-color-scheme: dark) {
+  .offline-banner {
+    background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+    border-bottom-color: #9c1818;
+    box-shadow: 0 2px 8px rgba(211, 47, 47, 0.25);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .offline-banner {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.85rem;
+  }
+  
+  .offline-banner::before {
+    font-size: 1rem;
+  }
 }
 
 :focus-visible {
@@ -2139,4 +2219,223 @@ button, a, input[type="button"], input[type="submit"] {
 /* Radio Button Custom Styling */
 .correct-answer-radio:checked + div {
     animation: pulse 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== LOADING & SKELETON ANIMATIONS ===== */
+
+@keyframes skeleton-loading {
+  0% {
+    background-color: #f0f0f0;
+  }
+  50% {
+    background-color: #e0e0e0;
+  }
+  100% {
+    background-color: #f0f0f0;
+  }
+}
+
+.skeleton-loader {
+  animation: skeleton-loading 2s linear infinite;
+  border-radius: 0.5rem;
+  height: 1rem;
+  background-color: #f0f0f0;
+}
+
+.skeleton-loader.text-lg {
+  height: 1.5rem;
+}
+
+.skeleton-loader.text-2xl {
+  height: 2rem;
+}
+
+.skeleton-loader.card {
+  height: 120px;
+  margin-bottom: 1rem;
+}
+
+.skeleton-loader.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+}
+
+/* Fade-in animations for smooth entry */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.fade-in-delayed {
+  animation: fadeIn 0.4s ease-out forwards;
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.fade-in-scale {
+  animation: fadeInScale 0.3s ease-out forwards;
+}
+
+/* Stagger effect for multiple elements */
+.fade-in-stagger > * {
+  animation: fadeIn 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+.fade-in-stagger > *:nth-child(1) { animation-delay: 0s; }
+.fade-in-stagger > *:nth-child(2) { animation-delay: 0.1s; }
+.fade-in-stagger > *:nth-child(3) { animation-delay: 0.2s; }
+.fade-in-stagger > *:nth-child(4) { animation-delay: 0.3s; }
+.fade-in-stagger > *:nth-child(5) { animation-delay: 0.4s; }
+.fade-in-stagger > *:nth-child(6) { animation-delay: 0.5s; }
+
+/* Page transition animations */
+.page-enter {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.page-exit {
+  animation: fadeIn 0.3s ease-out reverse;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner.lg {
+  width: 40px;
+  height: 40px;
+  border-width: 4px;
+}
+
+/* Pulse animation for attention */
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(6, 102, 204, 0.7);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 8px rgba(6, 102, 204, 0);
+  }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2s infinite;
+}
+
+/* Smooth transitions for interactive elements */
+button, a, input[type="submit"], input[type="button"] {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Smooth hover animations */
+.smooth-hover {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.smooth-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== POLISH: GRADIENT BACKGROUNDS ===== */
+
+.gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, var(--color-success) 0%, #155724 100%);
+}
+
+/* ===== POLISH: IMPROVED SHADOWS ===== */
+
+.shadow-elevation-1 {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.shadow-elevation-2 {
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+}
+
+.shadow-elevation-3 {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23);
+}
+
+.shadow-elevation-4 {
+  box-shadow: 0 15px 25px rgba(0, 0, 0, 0.15), 0 5px 10px rgba(0, 0, 0, 0.05);
+}
+
+/* ===== POLISH: SMOOTH TRANSITIONS ===== */
+
+.transition-smooth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-smooth-fast {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== DARK MODE POLISH ===== */
+
+@media (prefers-color-scheme: dark) {
+  .skeleton-loader {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: calc(200% + 1px) 0;
+    }
+  }
 }

@@ -5,5 +5,16 @@
     { "source": "/study", "destination": "/study.html" },
     { "source": "/account", "destination": "/account.html" },
     { "source": "/roleplay", "destination": "/roleplay.html" }
+  ],
+  "headers": [
+    {
+      "source": "**/*",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+        }
+      ]
+    }
   ]
 }

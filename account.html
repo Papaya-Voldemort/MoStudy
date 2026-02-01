@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <title>MoStudy - Account</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="tailwind-output.css">
     <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -129,10 +129,10 @@
                             <label for="notif-toggle" class="block font-bold text-xl text-slate-800 dark:text-slate-100 mb-1 cursor-pointer">Email Notifications</label>
                             <p class="text-slate-600 dark:text-slate-400 max-w-xl">Receive updates about new exam materials, platform features, and performance summaries.</p>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <div class="relative inline-flex items-center cursor-pointer ml-4">
                             <input type="checkbox" id="notif-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                        </label>
+                            <label for="notif-toggle" class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></label>
+                        </div>
                     </div>
 
                     <!-- Timer Sounds -->
@@ -141,10 +141,10 @@
                             <label for="timer-sounds-toggle" class="block font-bold text-xl text-slate-800 dark:text-slate-100 mb-1 cursor-pointer">Timer Alerts</label>
                             <p class="text-slate-600 dark:text-slate-400 max-w-xl">Enable audio notifications for the last 5 minutes of a practice exam to keep you on track.</p>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer ml-4">
+                        <div class="relative inline-flex items-center cursor-pointer ml-4">
                             <input type="checkbox" id="timer-sounds-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                        </label>
+                            <label for="timer-sounds-toggle" class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></label>
+                        </div>
                     </div>
 
                     <!-- Save Button -->
@@ -184,8 +184,9 @@
     </script>
     <script src="theme.js?v=20260131b" defer></script>
     <script src="nav.js?v=20260131b" defer></script>
+    <script src="loading-utils.js?v=20260201a" defer></script>
     <script src="offline.js?v=20260201a" defer></script>
-    <script type="module" src="app.js?v=20260131b" defer></script>
+    <script type="module" src="app.js?v=20260131b"></script>
     <script type="module" src="auth.js?v=20260131b"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <title>MoStudy - Admin Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="tailwind-output.css">
     <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="styles.css">
@@ -405,7 +405,7 @@
             <aside id="editor-sidebar" class="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col absolute md:relative z-20 h-full transform transition-transform duration-200 md:translate-x-0 -translate-x-full shadow-xl md:shadow-none">
                 <!-- Sidebar Header: Test Settings Link -->
                 <div class="p-4 border-b border-slate-200 bg-slate-50/50">
-                    <button id="settings-nav-item" class="w-full text-left p-3 rounded-xl hover:bg-white hover:shadow-sm transition border border-transparent hover:border-slate-200 group active-nav-item">
+                    <div id="settings-nav-item" role="button" tabindex="0" class="w-full text-left p-3 rounded-xl hover:bg-white hover:shadow-sm transition border border-transparent hover:border-slate-200 group active-nav-item cursor-pointer">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition shadow-sm">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -421,7 +421,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                             </svg>
                         </div>
-                    </button>
+                    </div>
                     <!-- Mobile Close Sidebar Button (Only visible on mobile sidebar) -->
                     <button id="mobile-sidebar-close" class="md:hidden w-full mt-2 py-2 text-slate-500 bg-slate-100 rounded-lg text-sm font-medium">
                         Close Menu
@@ -445,7 +445,7 @@
             </aside>
     
             <!-- Canvas -->
-            <main id="editor-canvas" class="flex-1 overflow-y-auto bg-slate-50/50 p-4 md:p-8 relative w-full scroll-smooth">
+            <section id="editor-canvas" class="flex-1 overflow-y-auto bg-slate-50/50 p-4 md:p-8 relative w-full scroll-smooth">
                 <!-- Mobile Sidebar Toggle Overlay -->
                 <div id="mobile-sidebar-overlay" class="hidden fixed inset-0 bg-black/20 z-10 md:hidden backdrop-blur-sm"></div>
 
@@ -466,7 +466,7 @@
                         <!-- Forms will be injected here -->
                     </div>
                 </div>
-            </main>
+            </section>
         </div>
     </div>
 
@@ -479,8 +479,9 @@
     </script>
     <script src="theme.js?v=20260131b" defer></script>
     <script src="nav.js?v=20260131b" defer></script>
+    <script src="loading-utils.js?v=20260201a" defer></script>
     <script src="offline.js?v=20260201a" defer></script>
-    <script type="module" src="admin.js?v=20260131f" defer></script>
+    <script type="module" src="admin.js?v=20260131f"></script>
     <script type="module" src="auth.js?v=20260131b"></script>
 
 </body>

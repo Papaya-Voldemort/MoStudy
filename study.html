@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <title>MoStudy - Study</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="tailwind-output.css">
     <script src="https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -84,27 +84,27 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10">
-                    <button data-action="open-exams" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition flex items-center gap-4 group">
+                    <div data-action="open-exams" role="button" tabindex="0" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition flex items-center gap-4 group cursor-pointer">
                         <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">📝</div>
                         <div>
                             <h3 class="font-bold text-slate-800">Tests & Exams</h3>
                             <p class="text-slate-500 text-sm">Timed practice with review, analytics, and AI insights.</p>
                         </div>
-                    </button>
-                    <button data-action="open-flashcards" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-purple-400 hover:shadow-md transition flex items-center gap-4 group">
+                    </div>
+                    <div data-action="open-flashcards" role="button" tabindex="0" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-purple-400 hover:shadow-md transition flex items-center gap-4 group cursor-pointer">
                         <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">🧠</div>
                         <div>
                             <h3 class="font-bold text-slate-800">Flashcard Studio</h3>
                             <p class="text-slate-500 text-sm">Premium flip experience with smart tracking and shuffle.</p>
                         </div>
-                    </button>
-                    <button data-action="open-test-maker" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-400 hover:shadow-md transition flex items-center gap-4 group">
+                    </div>
+                    <div data-action="open-test-maker" role="button" tabindex="0" class="text-left bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-400 hover:shadow-md transition flex items-center gap-4 group cursor-pointer">
                         <div class="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl group-hover:scale-105 transition-transform">🛠️</div>
                         <div>
                             <h3 class="font-bold text-slate-800">Test Maker Mode</h3>
                             <p class="text-slate-500 text-sm">Practice writing FBLA questions and answer sets.</p>
                         </div>
-                    </button>
+                    </div>
                 </div>
             </div>
 
@@ -123,20 +123,20 @@
                 </div>
 
                 <!-- Upload Card -->
-                <div class="bg-white p-6 rounded-2xl shadow-sm border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/30 transition cursor-pointer mb-8 group flex flex-col sm:flex-row items-center sm:justify-between gap-4 text-center sm:text-left" role="button" tabindex="0" data-action="upload-json">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xl shadow-sm group-hover:scale-110 transition-transform">
+                <button class="bg-white p-6 rounded-2xl shadow-sm border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/30 transition cursor-pointer mb-8 group flex flex-col sm:flex-row items-center sm:justify-between gap-4 text-center sm:text-left w-full text-left" data-action="upload-json">
+                    <span style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="display: inline-flex; width: 3rem; height: 3rem; border-radius: 9999px; background-color: #dbeafe; color: #2563eb; align-items: center; justify-content: center; font-size: 1.25rem; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); transition: transform 0.15s;" class="group-hover:scale-110">
                             📂
-                        </div>
-                        <div>
-                            <h3 class="font-bold text-slate-700 text-lg group-hover:text-blue-700 transition">Upload Custom JSON Test</h3>
-                            <p class="text-slate-500 text-sm">Drag and drop or click to browse local files</p>
-                        </div>
-                    </div>
-                    <button class="bg-white text-blue-600 font-semibold py-2 px-5 rounded-lg border border-slate-200 shadow-sm group-hover:shadow hover:bg-blue-50 transition text-sm">
+                        </span>
+                        <span style="display: flex; flex-direction: column; gap: 0.25rem;">
+                            <strong style="color: #374151; font-size: 1.125rem; transition: color 0.15s;" class="group-hover:text-blue-700">Upload Custom JSON Test</strong>
+                            <span style="color: #6b7280; font-size: 0.875rem;">Drag and drop or click to browse local files</span>
+                        </span>
+                    </span>
+                    <span style="display: inline-flex; background-color: #ffffff; color: #2563eb; font-weight: 600; padding: 0.5rem 1.25rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); font-size: 0.875rem; pointer-events: none;" class="group-hover:shadow-sm hover:bg-blue-50 transition">
                         Select File
-                    </button>
-                </div>
+                    </span>
+                </button>
             
             <div id="test-details-container" class="hidden bg-white p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-200 relative overflow-hidden mb-8 fade-in-up">
                  <button onclick="closeTestDetails()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition">
@@ -182,7 +182,7 @@
                     <div class="pt-2">
                         <button id="start-btn" onclick="startQuiz()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-10 rounded-xl shadow-lg hover:shadow-blue-500/20 transition transform hover:-translate-y-0.5 text-lg flex items-center justify-center gap-2">
                             <span>Start Exam</span>
-                            <div id="start-btn-spinner" class="hidden animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                            <span id="start-btn-spinner" class="hidden animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
                             <svg id="start-btn-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                         </button>
                     </div>
@@ -303,8 +303,8 @@
 
                         <div class="flashcard-stage">
                             <button id="flashcard-card" class="flashcard-card" type="button" aria-live="polite" aria-label="Flashcard. Press to flip.">
-                                <div class="flashcard-face flashcard-front" id="flashcard-front"></div>
-                                <div class="flashcard-face flashcard-back" id="flashcard-back"></div>
+                                <span class="flashcard-face flashcard-front" id="flashcard-front"></span>
+                                <span class="flashcard-face flashcard-back" id="flashcard-back"></span>
                             </button>
                         </div>
 
@@ -620,7 +620,8 @@
     <script type="module" src="auth.js?v=20260131b"></script>
     <script src="theme.js?v=20260131b" defer></script>
     <script src="nav.js?v=20260131b" defer></script>
+    <script src="loading-utils.js?v=20260201a" defer></script>
     <script src="offline.js?v=20260201a" defer></script>
-    <script type="module" src="app.js?v=20260131e" defer></script>
+    <script type="module" src="app.js?v=20260131e"></script>
 </body>
 </html>

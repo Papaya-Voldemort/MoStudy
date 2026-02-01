@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v20260201a';
+const CACHE_VERSION = 'v20260201b';
 const STATIC_CACHE = `mostudy-static-${CACHE_VERSION}`;
 const DATA_CACHE = `mostudy-data-${CACHE_VERSION}`;
 
@@ -17,6 +17,7 @@ const STATIC_ASSETS = [
     '/nav.js',
     '/theme.js',
     '/offline.js',
+    '/loading-utils.js',
     '/favicon.ico'
 ];
 
