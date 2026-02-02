@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v20260201b';
+const CACHE_VERSION = 'v20260202b';
 const STATIC_CACHE = `mostudy-static-${CACHE_VERSION}`;
 const DATA_CACHE = `mostudy-data-${CACHE_VERSION}`;
 
@@ -88,13 +88,15 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(event.request)
                 .then((response) => {
+                    const copy = response.clone();
+                    caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, copy));
                     return response;
                 })
                 .catch(() => {
                     if (url.pathname.startsWith('/study')) return caches.match('/study.html');
                     if (url.pathname.startsWith('/roleplay')) return caches.match('/roleplay.html');
                     if (url.pathname.startsWith('/account')) return caches.match('/account.html');
-                    if (url.pathname.startsWith('/admin')) return caches.match('/admin.html');
+                    if (url.pathname.startsWith('/admin')) return fetch(event.request);
                     return caches.match('/index.html');
                 })
         );

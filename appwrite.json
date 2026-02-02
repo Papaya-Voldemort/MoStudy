@@ -57,6 +57,17 @@
                 "update(\"label:admin\")",
                 "delete(\"label:admin\")"
             ]
+        },
+        {
+            "$id": "question_reports",
+            "databaseId": "mostudy",
+            "name": "Question Reports",
+            "permissions": [
+                "read(\"label:admin\")",
+                "create(\"users\")",
+                "update(\"users\")",
+                "delete(\"label:admin\")"
+            ]
         }
     ]
 }

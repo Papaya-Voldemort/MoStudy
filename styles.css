@@ -30,7 +30,7 @@ body {
 
 .skip-link {
   position: absolute;
-  left: -999px;
+  left: -9999px;
   top: 0.75rem;
   padding: 0.6rem 1rem;
   background: var(--color-white);
@@ -39,10 +39,18 @@ body {
   border-radius: 0.75rem;
   font-weight: 700;
   z-index: 1000;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
 }
 
 .skip-link:focus {
   left: 0.75rem;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
 }
 
 /* Offline Banner */

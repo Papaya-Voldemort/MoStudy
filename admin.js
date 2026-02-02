@@ -4,6 +4,7 @@ import { ID, Query } from 'appwrite';
 // Constants
 const COLLECTION_TESTS = 'tests';
 const COLLECTION_HISTORY = 'quiz_history';
+const COLLECTION_REPORTS = 'question_reports';
 
 // State
 let currentUser = null;
@@ -250,6 +251,34 @@ function closeTestEditor() {
 
 // Navigation Helper
 function navigateToItem(index) {
+    // Save any pending changes from current form before navigating
+    if (activeEditorItem !== null && activeEditorItem !== index) {
+        // We're leaving a question editor - capture any unsaved field values
+        const container = document.getElementById('editor-form-container');
+        if (container) {
+            // Save question text
+            const textArea = container.querySelector('textarea');
+            if (textArea && currentTestData.questions[activeEditorItem]) {
+                currentTestData.questions[activeEditorItem].text = textArea.value;
+            }
+            
+            // Save category
+            const categoryInput = container.querySelectorAll('input[type="text"]')[0];
+            if (categoryInput && currentTestData.questions[activeEditorItem]) {
+                currentTestData.questions[activeEditorItem].category = categoryInput.value;
+            }
+            
+            // Save options
+            const optionInputs = container.querySelectorAll('input[type="text"]');
+            if (optionInputs.length > 1 && currentTestData.questions[activeEditorItem]) {
+                // Skip first input (category) and get option inputs
+                for (let i = 1; i < optionInputs.length && i <= 4; i++) {
+                    currentTestData.questions[activeEditorItem].options[i - 1] = optionInputs[i].value;
+                }
+            }
+        }
+    }
+    
     activeEditorItem = index;
     renderSidebar();
     renderEditorCanvas();
@@ -293,14 +322,7 @@ function renderSidebar() {
                         ${escapeHtml(q.category) || 'Uncategorized'}
                     </div>
                 </div>
-                <div class="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5" onclick="event.stopPropagation()">
-                    <button type="button" onclick="moveQuestion(${index}, -1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === 0 ? 'invisible' : ''}" title="Move Up" aria-label="Move question ${index + 1} up">
-                        <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-                    </button>
-                    <button type="button" onclick="moveQuestion(${index}, 1)" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer ${index === currentTestData.questions.length - 1 ? 'invisible' : ''}" title="Move Down" aria-label="Move question ${index + 1} down">
-                        <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                    </button>
-                </div>
+
             </button>
         `;
     }).join('');
@@ -532,7 +554,7 @@ function renderQuestionEditor(container, index) {
                                         ${i === q.correct ? 'border-green-300 bg-green-50/30 focus:ring-green-500' : 'border-slate-300 focus:ring-blue-500'}"
                                         value="${escapeHtml(opt)}"
                                         placeholder="Option ${i + 1}"
-                                        oninput="const newOpts = [...currentTestData.questions[${index}].options]; newOpts[${i}] = this.value; updateQuestionData(${index}, 'options', newOpts)">
+                                        oninput="updateQuestionOption(${index}, ${i}, this.value)">
                                 </div>
                             </div>
                         `).join('')}
@@ -546,8 +568,18 @@ function renderQuestionEditor(container, index) {
     window.duplicateQuestion = duplicateQuestion;
     window.deleteQuestion = deleteQuestion;
     window.updateQuestionData = updateQuestionData;
+    window.updateQuestionOption = updateQuestionOption;
     window.renderQuestionEditor = renderQuestionEditor;
     window.moveQuestion = moveQuestion;
+}
+
+// Helper function to update a single option
+function updateQuestionOption(questionIndex, optionIndex, value) {
+    if (!currentTestData.questions[questionIndex]) return;
+    currentTestData.questions[questionIndex].options[optionIndex] = value;
+    isDirty = true;
+    updateSaveStatus('Unsaved changes');
+    renderSidebar();
 }
 
 function moveQuestion(index, direction) {
@@ -697,23 +729,30 @@ async function saveTest(isAutoSave = false) {
 }
 // Validate test data
 function validateTestData(testData) {
+    console.log('[Validation] Checking test data:', testData);
+    
     if (!testData.id || !testData.title || !testData.description || !testData.timeLimitSeconds) {
+        console.log('[Validation] Missing global settings');
         return { valid: false, message: 'Please fill in all required global settings (Title, ID, Description, Time Limit).' };
     }
     
     if (testData.questions.length === 0) {
+        console.log('[Validation] No questions');
         return { valid: false, message: 'Please add at least one question.' };
     }
     
     for (const [index, q] of testData.questions.entries()) {
         if (!q.text || q.text.trim() === '') {
+            console.log(`[Validation] Question #${index + 1} is empty:`, q);
             return { valid: false, message: `Question #${index + 1} is empty.` };
         }
         if (q.options.some(opt => !opt || opt.trim() === '')) {
+            console.log(`[Validation] Question #${index + 1} has empty options:`, q.options);
             return { valid: false, message: `Question #${index + 1} has empty options.` };
         }
     }
     
+    console.log('[Validation] All checks passed!');
     return { valid: true };
 }
 
@@ -1161,6 +1200,7 @@ function displayTestAnalytics(testId) {
         document.getElementById('charts-section').classList.add('hidden');
         document.getElementById('ai-insights-section').classList.add('hidden');
         document.getElementById('question-analysis-section').classList.add('hidden');
+        document.getElementById('reported-questions-section').classList.add('hidden');
         return;
     }
     
@@ -1176,6 +1216,7 @@ function displayTestAnalytics(testId) {
     document.getElementById('charts-section').classList.remove('hidden');
     document.getElementById('ai-insights-section').classList.remove('hidden');
     document.getElementById('question-analysis-section').classList.remove('hidden');
+    document.getElementById('reported-questions-section').classList.remove('hidden');
     
     // Render charts
     renderFrequencyChart(stats.frequency);
@@ -1183,6 +1224,9 @@ function displayTestAnalytics(testId) {
     
     // Render question analysis
     renderQuestionAnalysis(testId, stats.questionStats);
+    
+    // Load and render reported questions
+    loadReportedQuestions(testId);
 }
 
 // Render frequency chart
@@ -1423,6 +1467,129 @@ function renderQuestionAnalysis(testId, questionStats) {
     }).join('');
 }
 
+// Load and render reported questions
+async function loadReportedQuestions(testId) {
+    const loadingEl = document.getElementById('reported-questions-loading');
+    const emptyEl = document.getElementById('reported-questions-empty');
+    const contentEl = document.getElementById('reported-questions-content');
+    const countBadge = document.getElementById('reports-count-badge');
+    
+    // Show loading
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    if (contentEl) contentEl.innerHTML = '';
+    
+    try {
+        // Query reports for this test
+        const response = await databases.listDocuments(
+            DB_ID,
+            COLLECTION_REPORTS,
+            [
+                Query.equal('test_id', testId),
+                Query.orderDesc('$createdAt'),
+                Query.limit(100)
+            ]
+        );
+        
+        if (loadingEl) loadingEl.classList.add('hidden');
+        
+        if (response.documents.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            if (countBadge) countBadge.textContent = '0 reports';
+            return;
+        }
+        
+        if (emptyEl) emptyEl.classList.add('hidden');
+        if (countBadge) countBadge.textContent = `${response.documents.length} report${response.documents.length !== 1 ? 's' : ''}`;
+        
+        // Group reports by question
+        const reportsByQuestion = {};
+        response.documents.forEach(report => {
+            const key = report.question_text;
+            if (!reportsByQuestion[key]) {
+                reportsByQuestion[key] = {
+                    question: report.question_text,
+                    category: report.question_category,
+                    reports: []
+                };
+            }
+            reportsByQuestion[key].reports.push(report);
+        });
+        
+        // Render grouped reports
+        if (contentEl) {
+            contentEl.innerHTML = Object.values(reportsByQuestion).map(group => {
+                const reasonCounts = {};
+                group.reports.forEach(r => {
+                    reasonCounts[r.reason] = (reasonCounts[r.reason] || 0) + 1;
+                });
+                
+                const reasonLabels = {
+                    'incorrect-answer': 'Incorrect Answer',
+                    'unclear-question': 'Unclear Question',
+                    'typo': 'Typo/Formatting',
+                    'outdated': 'Outdated Info',
+                    'other': 'Other'
+                };
+                
+                return `
+                    <div class="border-2 border-red-200 bg-red-50 rounded-xl p-4 sm:p-5">
+                        <div class="flex items-start justify-between gap-3 mb-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="text-lg">⚠️</span>
+                                    <h5 class="font-bold text-slate-800">Reported Question</h5>
+                                    <span class="px-2 py-0.5 bg-red-600 text-white text-xs font-semibold rounded-full">${group.reports.length}</span>
+                                </div>
+                                <p class="text-sm text-slate-700 font-medium mb-2">${escapeHtml(group.question)}</p>
+                                <span class="inline-block px-2 py-1 bg-slate-200 text-slate-700 text-xs font-medium rounded">${escapeHtml(group.category)}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold text-slate-600 mb-2">Reasons:</p>
+                            <div class="flex flex-wrap gap-2">
+                                ${Object.entries(reasonCounts).map(([reason, count]) => `
+                                    <span class="px-2 py-1 bg-white border border-red-300 text-red-700 text-xs font-medium rounded">
+                                        ${reasonLabels[reason] || reason}: ${count}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <details class="text-sm">
+                            <summary class="cursor-pointer text-blue-600 hover:text-blue-700 font-semibold mb-2">View all ${group.reports.length} report${group.reports.length !== 1 ? 's' : ''}</summary>
+                            <div class="space-y-2 mt-2">
+                                ${group.reports.map(report => {
+                                    const date = new Date(report.reported_at || report.$createdAt).toLocaleString();
+                                    return `
+                                        <div class="bg-white border border-slate-200 rounded-lg p-3">
+                                            <div class="flex items-start justify-between gap-2 mb-1">
+                                                <span class="text-xs font-semibold text-slate-700">${reasonLabels[report.reason] || report.reason}</span>
+                                                <span class="text-xs text-slate-500">${date}</span>
+                                            </div>
+                                            <p class="text-xs text-slate-600">User: ${escapeHtml(report.user_email || 'Unknown')}</p>
+                                            ${report.notes ? `<p class="text-xs text-slate-700 mt-2 italic">"${escapeHtml(report.notes)}"</p>` : ''}
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </details>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+    } catch (error) {
+        console.error('Error loading reported questions:', error);
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (emptyEl) {
+            emptyEl.textContent = 'Error loading reports. Please try again.';
+            emptyEl.classList.remove('hidden');
+        }
+    }
+}
+
 // Generate AI insights
 async function generateAIInsights() {
     if (!currentAnalyticsTest) return;
@@ -1537,6 +1704,7 @@ function setupAnalytics() {
                 document.getElementById('charts-section').classList.add('hidden');
                 document.getElementById('ai-insights-section').classList.add('hidden');
                 document.getElementById('question-analysis-section').classList.add('hidden');
+                document.getElementById('reported-questions-section').classList.add('hidden');
             }
         });
     }

@@ -1,8 +1,15 @@
-import { functions, databases, DB_ID, COLLECTION_HISTORY, COLLECTION_USERS, COLLECTION_TESTS, safeExecuteFunction } from './lib/appwrite.js';
+import { functions, databases, DB_ID, COLLECTION_HISTORY, COLLECTION_USERS, COLLECTION_TESTS, COLLECTION_REPORTS, safeExecuteFunction } from './lib/appwrite.js';
 import { SmartCache } from './lib/cache.js';
 import { ExecutionMethod, ID, Query } from 'appwrite';
 
 // --- CATALOG ---
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+}
+
 
 // Helper to get auth token for cache operations and AI requests
 async function getAuthToken() {
@@ -1242,6 +1249,27 @@ function renderQuestion() {
     progressBar.style.width = `${((currentQuestionIndex + 1) / questions.length) * 100}%`;
 
     updateFlagButtonUI();
+    
+    // Check if this is a custom test (not in the built-in catalog)
+    const isCatalogTest = catalog.some(cat => cat.id === currentTest?.id);
+    const isCustomTest = currentTest && !isCatalogTest;
+    
+    console.log('[DEBUG renderQuestion] currentTest:', currentTest);
+    console.log('[DEBUG renderQuestion] test ID:', currentTest?.id);
+    console.log('[DEBUG renderQuestion] Is catalog test?', isCatalogTest);
+    console.log('[DEBUG renderQuestion] Is custom test?', isCustomTest);
+    
+    // Show/hide report button based on test type
+    const reportBtn = document.getElementById('report-btn');
+    if (reportBtn && isCustomTest) {
+        console.log('[DEBUG] Showing report button');
+        reportBtn.classList.remove('hidden');
+        reportBtn.classList.add('flex');
+    } else if (reportBtn) {
+        console.log('[DEBUG] Hiding report button');
+        reportBtn.classList.add('hidden');
+        reportBtn.classList.remove('flex');
+    }
 
     optionsContainer.innerHTML = '';
     // Create shuffled indices for options
@@ -1336,6 +1364,106 @@ function updateFlagButtonUI() {
         `;
     }
 }
+
+// Report Question Functions
+window.openReportModal = function() {
+    const modal = document.getElementById('report-modal');
+    const reportError = document.getElementById('report-error');
+    
+    // Clear previous selections
+    document.querySelectorAll('input[name="report-reason"]').forEach(radio => radio.checked = false);
+    document.getElementById('report-notes').value = '';
+    reportError.classList.add('hidden');
+    
+    modal.classList.remove('hidden');
+}
+
+window.closeReportModal = function() {
+    const modal = document.getElementById('report-modal');
+    modal.classList.add('hidden');
+}
+
+window.submitReport = async function() {
+    const reportError = document.getElementById('report-error');
+    const selectedReason = document.querySelector('input[name="report-reason"]:checked');
+    const notes = document.getElementById('report-notes').value.trim();
+    
+    // Validate
+    if (!selectedReason) {
+        reportError.textContent = 'Please select a reason for reporting this question.';
+        reportError.classList.remove('hidden');
+        return;
+    }
+    
+    // Check if user is logged in
+    const currentUser = window.getCurrentUser ? window.getCurrentUser() : null;
+    if (!currentUser) {
+        reportError.textContent = 'You must be logged in to report questions.';
+        reportError.classList.remove('hidden');
+        return;
+    }
+    
+    // Get current question data
+    const question = questions[currentQuestionIndex];
+    const testId = currentTest?.id || 'unknown';
+    
+    // Only allow reporting for custom tests (not catalog tests)
+    const isCatalogTest = catalog.some(cat => cat.id === testId);
+    if (isCatalogTest) {
+        reportError.textContent = 'Reports are only available for custom tests.';
+        reportError.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        // Submit report to database
+        await databases.createDocument(
+            DB_ID,
+            COLLECTION_REPORTS,
+            ID.unique(),
+            {
+                test_id: testId,
+                question_text: question.text,
+                question_category: question.category || 'Uncategorized',
+                question_index: currentQuestionIndex,
+                reason: selectedReason.value,
+                notes: notes || '',
+                user_id: currentUser.$id,
+                user_email: currentUser.email || 'Unknown',
+                reported_at: new Date().toISOString()
+            }
+        );
+        
+        // Success - close modal
+        window.closeReportModal();
+        
+        // Show success message
+        showNotification('Question reported successfully. Thank you for your feedback!', 'success');
+        
+    } catch (error) {
+        console.error('Error submitting report:', error);
+        reportError.textContent = 'Failed to submit report. Please try again.';
+        reportError.classList.remove('hidden');
+    }
+}
+
+// Helper to show notification (simple implementation)
+function showNotification(message, type = 'info') {
+    // Create a simple toast notification
+    const toast = document.createElement('div');
+    toast.className = `fixed top-20 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white font-semibold ${
+        type === 'success' ? 'bg-green-600' : type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+    }`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 
 function nextQuestion() {
     if (currentQuestionIndex < questions.length - 1) {

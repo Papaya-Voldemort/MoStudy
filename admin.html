@@ -73,7 +73,7 @@
 </head>
 <body class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-bg); color: var(--color-text); font-family: var(--font-main);">
     <a href="#main-content" class="skip-link">Skip to main content</a>
-    <div id="offline-banner" class="offline-banner" role="status" aria-live="polite">You are offline. Some features may be unavailable.</div>
+    <div id="offline-banner" class="offline-banner" role="status" aria-live="polite"></div>
 
     <!-- Header -->
     <header class="text-white p-3 sm:p-4 shadow-lg flex items-center z-10 shrink-0 gap-2 sm:gap-4" style="background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); border-bottom: 1px solid var(--color-border);">
@@ -348,6 +348,26 @@
                             <h4 class="text-lg font-semibold text-slate-800 mb-4">Question Performance</h4>
                             <div id="question-analysis-content" class="space-y-4">
                                 <!-- Question stats will be rendered here -->
+                            </div>
+                        </div>
+
+                        <!-- Reported Questions Section -->
+                        <div id="reported-questions-section" class="hidden bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="text-lg font-semibold text-slate-800">Reported Questions</h4>
+                                <span id="reports-count-badge" class="px-3 py-1 bg-red-100 text-red-700 text-sm font-semibold rounded-full">0 reports</span>
+                            </div>
+                            <div id="reported-questions-loading" class="hidden text-center py-8">
+                                <div class="animate-spin rounded-full h-8 w-8 border-b-4 border-blue-600 mx-auto mb-2"></div>
+                                <p class="text-sm text-slate-600">Loading reports...</p>
+                            </div>
+                            <div id="reported-questions-empty" class="text-center py-8 text-slate-500">
+                                No reported questions for this test.
+                            </div>
+                            <div id="reported-questions-content" class="space-y-4">
+                                <!-- Reported questions will be rendered here -->
+                            </div>
+                        </div>
                             </div>
                         </div>
 
