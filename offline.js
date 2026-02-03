@@ -1,4 +1,5 @@
 const OFFLINE_BANNER_ID = 'offline-banner';
+let __mostudy_last_offline_log = 0; // prevent duplicate online/offline console spam
 
 function getOfflineMessage() {
     const hour = new Date().getHours();
@@ -29,8 +30,11 @@ function updateOfflineBanner() {
             header.setAttribute('data-offline', 'true');
         }
         
-        // Log offline status
-        console.log('[MoStudy] Offline mode enabled');
+        // Log offline status (debounced to avoid spam)
+        if (Date.now() - __mostudy_last_offline_log > 2000) {
+            console.log('[MoStudy] Offline mode enabled');
+            __mostudy_last_offline_log = Date.now();
+        }
     } else {
         // Hide banner with animation
         banner.classList.remove('is-visible');
@@ -42,8 +46,11 @@ function updateOfflineBanner() {
             header.removeAttribute('data-offline');
         }
         
-        // Log online status
-        console.log('[MoStudy] Back online');
+        // Log online status (debounced to avoid repeated messages)
+        if (Date.now() - __mostudy_last_offline_log > 2000) {
+            console.log('[MoStudy] Back online');
+            __mostudy_last_offline_log = Date.now();
+        }
     }
 }
 

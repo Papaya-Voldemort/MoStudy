@@ -191,6 +191,22 @@
                                 Analytics
                             </span>
                         </button>
+                        <button class="admin-tab px-4 py-3 font-semibold text-sm whitespace-nowrap border-b-2" data-tab="reports">
+                            <span class="flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                Reports
+                            </span>
+                        </button>
+                        <button class="admin-tab px-4 py-3 font-semibold text-sm whitespace-nowrap border-b-2" data-tab="users">
+                            <span class="flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                                </svg>
+                                Users
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -298,6 +314,15 @@
                                     </div>
                                     <div class="text-3xl font-bold text-slate-800" id="stat-completion-rate">0%</div>
                                 </div>
+                                <div id="stat-reports-card" onclick="document.getElementById('reported-questions-section').classList.remove('hidden'); document.getElementById('reported-questions-section').scrollIntoView({ behavior: 'smooth' });" class="bg-white rounded-xl border border-red-100 p-4 hover:border-red-300 transition cursor-pointer group">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-medium text-slate-600">Active Reports</span>
+                                        <svg class="w-5 h-5 text-red-600 group-hover:scale-110 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                        </svg>
+                                    </div>
+                                    <div class="text-3xl font-bold text-slate-800" id="stat-reports-count">0</div>
+                                </div>
                             </div>
                         </div>
 
@@ -351,11 +376,18 @@
                             </div>
                         </div>
 
-                        <!-- Reported Questions Section -->
-                        <div id="reported-questions-section" class="hidden bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
+                        <!-- Reported Questions Section (Moved here) -->
+                        <div id="reported-questions-section" class="hidden bg-white rounded-xl border-2 border-red-100 p-4 sm:p-6 shadow-sm">
                             <div class="flex items-center justify-between mb-4">
-                                <h4 class="text-lg font-semibold text-slate-800">Reported Questions</h4>
-                                <span id="reports-count-badge" class="px-3 py-1 bg-red-100 text-red-700 text-sm font-semibold rounded-full">0 reports</span>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="text-lg font-semibold text-slate-800">Reported Questions</h4>
+                                    <span id="reports-count-badge" class="px-3 py-1 bg-red-100 text-red-700 text-sm font-semibold rounded-full">0 reports</span>
+                                </div>
+                                <button onclick="document.getElementById('reported-questions-section').classList.add('hidden')" class="p-2 text-slate-400 hover:text-red-600 transition-colors" title="Close Reports">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
                             </div>
                             <div id="reported-questions-loading" class="hidden text-center py-8">
                                 <div class="animate-spin rounded-full h-8 w-8 border-b-4 border-blue-600 mx-auto mb-2"></div>
@@ -368,14 +400,97 @@
                                 <!-- Reported questions will be rendered here -->
                             </div>
                         </div>
-                            </div>
-                        </div>
-
                     </div>
 
                 </div>
             </div>
 
+            <!-- Reports Tab -->
+            <div id="reports-tab-content" class="admin-tab-content hidden flex-grow overflow-y-auto p-3 sm:p-4">
+                <div class="max-w-7xl mx-auto px-2 space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-800">Reported Questions</h3>
+                            <p class="text-slate-600 text-sm mt-1">Review and manage content flagged by students</p>
+                        </div>
+                        <button id="refresh-reports-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div id="reports-loading" class="text-center py-16 hidden">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                        <p class="text-slate-600">Loading reports...</p>
+                    </div>
+
+                    <div id="reports-empty" class="hidden text-center py-16 bg-white rounded-xl border border-slate-200">
+                        <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-10 h-10 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-slate-700 mb-2">No Reports Found</h3>
+                        <p class="text-slate-500">There are no reported questions at this time.</p>
+                    </div>
+
+                    <div id="reports-list" class="space-y-4">
+                        <!-- Reports will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Tab -->
+            <div id="users-tab-content" class="admin-tab-content hidden flex-grow overflow-y-auto p-3 sm:p-4">
+                <div class="max-w-7xl mx-auto px-2 space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-800">User Management</h3>
+                            <p class="text-slate-600 text-sm mt-1">Manage user access and roles</p>
+                        </div>
+                        <button id="refresh-users-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold flex items-center gap-2">
+                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div id="users-loading" class="text-center py-16 hidden">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                        <p class="text-slate-600">Loading users...</p>
+                    </div>
+
+                     <div id="users-empty" class="hidden text-center py-16 bg-white rounded-xl border border-slate-200">
+                        <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-10 h-10 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-slate-700 mb-2">No Users Found</h3>
+                        <p class="text-slate-500">There are no users to display.</p>
+                    </div>
+
+                    <div id="users-table-container" class="bg-white rounded-xl border border-slate-200 overflow-hidden hidden">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">User</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Email</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Roles</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Joined</th>
+                                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="divide-y divide-slate-200">
+                                <!-- Users will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
     </main>
@@ -503,6 +618,58 @@
     <script src="offline.js?v=20260201a" defer></script>
     <script type="module" src="admin.js?v=20260131f"></script>
     <script type="module" src="auth.js?v=20260131b"></script>
+
+    <!-- User Management Modal -->
+    <div id="user-management-modal" class="hidden fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" data-user-modal-close></div>
+        <div class="relative max-w-4xl mx-auto mt-8 sm:mt-12 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-800">Manage User</h3>
+                    <p class="text-sm text-slate-500">Edit profile data stored in MoStudy</p>
+                </div>
+                <button type="button" class="p-2 text-slate-400 hover:text-slate-600" data-user-modal-close aria-label="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="px-6 py-5 max-h-[70vh] overflow-y-auto">
+                <form id="user-management-form" class="space-y-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">User ID</label>
+                            <input id="user-field-id" type="text" readonly class="w-full px-4 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Display Name</label>
+                            <input id="user-field-name" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Preferences (JSON)</label>
+                        <textarea id="user-field-preferences" rows="5" class="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Goals (JSON Array)</label>
+                        <textarea id="user-field-goals" rows="5" class="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">History (JSON Array)</label>
+                        <textarea id="user-field-history" rows="5" class="w-full px-4 py-2 border border-slate-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                        <button type="button" class="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" data-user-modal-close>Cancel</button>
+                        <button type="submit" id="user-modal-save" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
 </body>
 </html>

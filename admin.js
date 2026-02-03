@@ -5,6 +5,7 @@ import { ID, Query } from 'appwrite';
 const COLLECTION_TESTS = 'tests';
 const COLLECTION_HISTORY = 'quiz_history';
 const COLLECTION_REPORTS = 'question_reports';
+const COLLECTION_USERS = 'user_profiles';
 
 // State
 let currentUser = null;
@@ -19,6 +20,7 @@ let analyticsData = {};
 let currentAnalyticsTest = null;
 let frequencyChart = null;
 let scoreChart = null;
+let usersCache = [];
 
 // Initialize Admin Page
 async function initAdmin() {
@@ -1004,6 +1006,12 @@ function switchTab(tabName) {
     } else if (tabName === 'analytics') {
         document.getElementById('analytics-tab-content').classList.remove('hidden');
         loadAnalytics();
+    } else if (tabName === 'reports') {
+        document.getElementById('reports-tab-content').classList.remove('hidden');
+        loadAllReports();
+    } else if (tabName === 'users') {
+        document.getElementById('users-tab-content').classList.remove('hidden');
+        loadUsers();
     }
 }
 
@@ -1212,11 +1220,14 @@ function displayTestAnalytics(testId) {
     document.getElementById('stat-unique-students').textContent = stats.uniqueStudents;
     document.getElementById('stat-completion-rate').textContent = Math.round(stats.completionRate) + '%';
     
+    // Hide reports section initially until data loads
+    document.getElementById('reported-questions-section').classList.add('hidden');
+    document.getElementById('stat-reports-count').textContent = '...';
+    
     document.getElementById('test-overview').classList.remove('hidden');
     document.getElementById('charts-section').classList.remove('hidden');
     document.getElementById('ai-insights-section').classList.remove('hidden');
     document.getElementById('question-analysis-section').classList.remove('hidden');
-    document.getElementById('reported-questions-section').classList.remove('hidden');
     
     // Render charts
     renderFrequencyChart(stats.frequency);
@@ -1496,11 +1507,16 @@ async function loadReportedQuestions(testId) {
         if (response.documents.length === 0) {
             if (emptyEl) emptyEl.classList.remove('hidden');
             if (countBadge) countBadge.textContent = '0 reports';
+            document.getElementById('stat-reports-count').textContent = '0';
             return;
         }
         
         if (emptyEl) emptyEl.classList.add('hidden');
         if (countBadge) countBadge.textContent = `${response.documents.length} report${response.documents.length !== 1 ? 's' : ''}`;
+        document.getElementById('stat-reports-count').textContent = response.documents.length;
+        
+        // Show section as it has reports
+        document.getElementById('reported-questions-section').classList.remove('hidden');
         
         // Group reports by question
         const reportsByQuestion = {};
@@ -1813,6 +1829,423 @@ window.restoreVersion = (index) => {
     
     alert('Restored version ' + version.version);
 };
+
+
+// ==================== REPORTS FUNCTIONS ====================
+
+async function loadAllReports() {
+    const loadingEl = document.getElementById('reports-loading');
+    const emptyEl = document.getElementById('reports-empty');
+    const listEl = document.getElementById('reports-list');
+    
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    if (listEl) listEl.innerHTML = '';
+    
+    try {
+        const response = await databases.listDocuments(
+            DB_ID,
+            COLLECTION_REPORTS,
+            [
+                Query.orderDesc('$createdAt'),
+                Query.limit(100)
+            ]
+        );
+        
+        if (loadingEl) loadingEl.classList.add('hidden');
+        
+        if (response.documents.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        
+        const reports = response.documents;
+        
+        if (listEl) {
+            listEl.innerHTML = reports.map(report => {
+                const date = new Date(report.reported_at || report.$createdAt).toLocaleString();
+                const reasonLabels = {
+                    'incorrect-answer': 'Incorrect Answer',
+                    'unclear-question': 'Unclear Question',
+                    'typo': 'Typo/Formatting',
+                    'outdated': 'Outdated Info',
+                    'other': 'Other'
+                };
+
+                const testInfo = resolveReportTest(report.test_id);
+                const testLabel = testInfo.testTitle || report.test_id;
+                const testIdLabel = testInfo.testDataId || report.test_id;
+                const hasTest = Boolean(testInfo.testDocId);
+                
+                return `
+                    <div class="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm transition hover:shadow-md">
+                        <div class="flex flex-col sm:flex-row justify-between gap-4">
+                            <div class="flex-grow">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        ${reasonLabels[report.reason] || report.reason}
+                                    </span>
+                                    <span class="text-xs text-slate-500">${date}</span>
+                                </div>
+                                <h4 class="font-bold text-slate-800 mb-1">Question:</h4>
+                                <p class="text-slate-700 bg-slate-50 p-3 rounded-lg mb-2 border border-slate-100">${escapeHtml(report.question_text)}</p>
+                                ${report.question_category ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 mb-3">${escapeHtml(report.question_category)}</span>` : ''}
+                                
+                                ${report.notes ? `
+                                    <h4 class="font-bold text-slate-800 mb-1 text-sm">User Notes:</h4>
+                                    <p class="text-slate-600 text-sm italic mb-3">"${escapeHtml(report.notes)}"</p>
+                                ` : ''}
+                                
+                                <div class="text-xs text-slate-500">
+                                    Reported by: ${escapeHtml(report.user_email || 'Anonymous')} | Test: <strong>${escapeHtml(testLabel)}</strong> <span class="text-slate-400">(${escapeHtml(testIdLabel)})</span>
+                                </div>
+                                ${hasTest ? '' : '<div class="text-xs text-amber-600 mt-2">Test not found in admin library. Ask an admin to sync tests.</div>'}
+                            </div>
+                            
+                            <div class="flex flex-col gap-2 shrink-0 sm:w-40">
+                                <button onclick="deleteReport('${report.$id}')" class="w-full px-4 py-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                    Remove
+                                </button>
+                                <button onclick='openReportTest(${JSON.stringify(report.test_id)}, ${JSON.stringify(report.question_text)})' class="w-full px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2" ${hasTest ? '' : 'disabled'}>
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Open Test
+                                </button>
+                                <button onclick='openReportAnalytics(${JSON.stringify(testIdLabel)})' class="w-full px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3v18m-4-4h8m-8-8h8"/>
+                                    </svg>
+                                    Analytics
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+    } catch (error) {
+        console.error('Error loading reports:', error);
+        if (loadingEl) loadingEl.classList.add('hidden');
+        showNotification('Error loading reports', 'error');
+    }
+}
+
+function resolveReportTest(reportTestId) {
+    let test = allTests.find(t => t.$id === reportTestId);
+    if (!test) {
+        test = allTests.find(t => {
+            try {
+                const data = typeof t.test_data === 'string' ? JSON.parse(t.test_data) : t.test_data;
+                return data?.id === reportTestId;
+            } catch (e) {
+                return false;
+            }
+        });
+    }
+
+    let testTitle = reportTestId;
+    let testDataId = reportTestId;
+    let testDocId = null;
+
+    if (test) {
+        testDocId = test.$id;
+        try {
+            const data = typeof test.test_data === 'string' ? JSON.parse(test.test_data) : test.test_data;
+            testTitle = data?.title || testTitle;
+            testDataId = data?.id || testDataId;
+        } catch (e) {
+            // ignore parsing errors
+        }
+    }
+
+    return { test, testTitle, testDataId, testDocId };
+}
+
+window.openReportTest = function(reportTestId, questionText) {
+    const testInfo = resolveReportTest(reportTestId);
+    if (!testInfo.testDocId) {
+        showNotification('Unable to find test in admin library.', 'error');
+        return;
+    }
+
+    openTestEditor(testInfo.testDocId);
+
+    if (questionText) {
+        const normalized = questionText.trim().toLowerCase();
+        const index = currentTestData?.questions?.findIndex(q => (q.text || '').trim().toLowerCase() === normalized);
+        const fuzzyIndex = index >= 0 ? index : currentTestData?.questions?.findIndex(q => (q.text || '').toLowerCase().includes(normalized));
+        const finalIndex = index >= 0 ? index : fuzzyIndex;
+
+        if (finalIndex !== undefined && finalIndex >= 0) {
+            navigateToItem(finalIndex);
+            showNotification('Opened reported question in editor.', 'success');
+        } else {
+            showNotification('Test opened. Reported question not found in this version.', 'info');
+        }
+    }
+};
+
+window.openReportAnalytics = async function(testDataId) {
+    if (!testDataId) return;
+    switchTab('analytics');
+    await loadAnalytics();
+    const selector = document.getElementById('analytics-test-select');
+    if (selector) {
+        selector.value = testDataId;
+    }
+    await displayTestAnalytics(testDataId);
+    // Explicitly show and scroll to reports
+    const reportSection = document.getElementById('reported-questions-section');
+    if (reportSection) {
+        reportSection.classList.remove('hidden');
+        reportSection.scrollIntoView({ behavior: 'smooth' });
+    }
+};
+
+window.deleteReport = async (reportId) => {
+    if (!confirm('Are you sure you want to remove this report?')) return;
+    
+    try {
+        await databases.deleteDocument(DB_ID, COLLECTION_REPORTS, reportId);
+        showNotification('Report removed successfully', 'success');
+        loadAllReports();
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        showNotification('Failed to remove report', 'error');
+    }
+};
+
+// ==================== USERS FUNCTIONS ====================
+
+async function loadUsers() {
+    const loadingEl = document.getElementById('users-loading');
+    const emptyEl = document.getElementById('users-empty');
+    const tableContainer = document.getElementById('users-table-container');
+    const tbody = document.getElementById('users-table-body');
+    
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    if (tableContainer) tableContainer.classList.add('hidden');
+    if (tbody) tbody.innerHTML = '';
+    
+    try {
+        const response = await databases.listDocuments(
+            DB_ID,
+            COLLECTION_USERS,
+            [
+                Query.limit(50),
+                Query.orderDesc('$createdAt')
+            ]
+        );
+        
+        if (loadingEl) loadingEl.classList.add('hidden');
+        
+        if (response.documents.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+
+        usersCache = response.documents;
+        
+        if (tableContainer) tableContainer.classList.remove('hidden');
+        
+        if (tbody) {
+            tbody.innerHTML = response.documents.map(user => {
+                const joinedDate = new Date(user.$createdAt).toLocaleDateString();
+                const displayName = user.display_name || user.name || user.username || 'Student';
+                const userId = user.user_id || user.$id;
+                const email = user.email || user.user_email || 'Not available';
+                
+                // Get initials for avatar
+                const initials = (displayName.substring(0, 2)).toUpperCase();
+                
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-10 w-10">
+                                    <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
+                                        ${initials}
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">${escapeHtml(displayName)}</div>
+                                    <div class="text-sm text-slate-500">${escapeHtml(userId)}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">${escapeHtml(email)}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Profile</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            ${joinedDate}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="manageUser('${user.$id}')" class="text-blue-600 hover:text-blue-900 mr-3">Manage</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+    } catch (error) {
+        console.error('Error loading users:', error);
+        if (loadingEl) loadingEl.classList.add('hidden');
+        showNotification('Error loading users', 'error');
+    }
+}
+
+function parseJsonField(raw, fallback) {
+    if (!raw || raw.trim() === '') return fallback;
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        throw new Error('Invalid JSON');
+    }
+}
+
+function prettyJson(value, fallback) {
+    if (value === undefined || value === null || value === '') return JSON.stringify(fallback, null, 2);
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        return JSON.stringify(parsed, null, 2);
+    } catch {
+        return typeof value === 'string' ? value : JSON.stringify(fallback, null, 2);
+    }
+}
+
+function openUserModal(userDoc) {
+    const modal = document.getElementById('user-management-modal');
+    if (!modal) return;
+
+    const form = document.getElementById('user-management-form');
+    if (form) {
+        form.dataset.userId = userDoc.$id;
+    }
+
+    const idField = document.getElementById('user-field-id');
+    const nameField = document.getElementById('user-field-name');
+    const prefField = document.getElementById('user-field-preferences');
+    const goalsField = document.getElementById('user-field-goals');
+    const historyField = document.getElementById('user-field-history');
+
+    if (idField) idField.value = userDoc.user_id || userDoc.$id;
+    if (nameField) nameField.value = userDoc.display_name || userDoc.name || 'Student';
+    if (prefField) prefField.value = prettyJson(userDoc.preferences, {});
+    if (goalsField) goalsField.value = prettyJson(userDoc.goals, []);
+    if (historyField) historyField.value = prettyJson(userDoc.history, []);
+
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeUserModal() {
+    const modal = document.getElementById('user-management-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+function setupUserModal() {
+    const modal = document.getElementById('user-management-modal');
+    const form = document.getElementById('user-management-form');
+    const closeButtons = document.querySelectorAll('[data-user-modal-close]');
+    const saveBtn = document.getElementById('user-modal-save');
+
+    closeButtons.forEach(btn => btn.addEventListener('click', closeUserModal));
+
+    if (modal) {
+        modal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeUserModal();
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const userId = form.dataset.userId;
+            if (!userId) return;
+
+            const nameField = document.getElementById('user-field-name');
+            const prefField = document.getElementById('user-field-preferences');
+            const goalsField = document.getElementById('user-field-goals');
+            const historyField = document.getElementById('user-field-history');
+
+            try {
+                const preferences = parseJsonField(prefField?.value, {});
+                const goals = parseJsonField(goalsField?.value, []);
+                const history = parseJsonField(historyField?.value, []);
+
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = 'Saving...';
+                }
+
+                await databases.updateDocument(
+                    DB_ID,
+                    COLLECTION_USERS,
+                    userId,
+                    {
+                        display_name: nameField?.value || 'Student',
+                        preferences: JSON.stringify(preferences),
+                        goals: JSON.stringify(goals),
+                        history: JSON.stringify(history)
+                    }
+                );
+
+                showNotification('User updated successfully', 'success');
+                closeUserModal();
+                loadUsers();
+            } catch (error) {
+                console.error('Error saving user:', error);
+                showNotification(error.message || 'Failed to save user', 'error');
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save Changes';
+                }
+            }
+        });
+    }
+}
+
+window.manageUser = function(userId) {
+    const userDoc = usersCache.find(user => user.$id === userId);
+    if (!userDoc) {
+        showNotification('User not found in cache. Refresh and try again.', 'error');
+        return;
+    }
+    openUserModal(userDoc);
+};
+
+// Add refresh listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const refreshReportsBtn = document.getElementById('refresh-reports-btn');
+    if (refreshReportsBtn) {
+        refreshReportsBtn.addEventListener('click', () => {
+             loadAllReports();
+             showNotification('Reports refreshed', 'success');
+        });
+    }
+    
+    const refreshUsersBtn = document.getElementById('refresh-users-btn');
+    if (refreshUsersBtn) {
+        refreshUsersBtn.addEventListener('click', () => {
+             loadUsers();
+             showNotification('Users list refreshed', 'success');
+        });
+    }
+
+    setupUserModal();
+});
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
