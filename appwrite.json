@@ -18,6 +18,40 @@
             "events": [],
             "schedule": "",
             "timeout": 900
+        },
+        {
+            "$id": "voice-tts",
+            "name": "Voice TTS",
+            "runtime": "node-18.0",
+            "path": "functions/voice-tts",
+            "entrypoint": "src/main.js",
+            "ignore": [
+                "node_modules",
+                ".gitignore"
+            ],
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "schedule": "",
+            "timeout": 60
+        },
+        {
+            "$id": "voice-stt",
+            "name": "Voice STT",
+            "runtime": "node-18.0",
+            "path": "functions/voice-stt",
+            "entrypoint": "src/main.js",
+            "ignore": [
+                "node_modules",
+                ".gitignore"
+            ],
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "schedule": "",
+            "timeout": 120
         }
     ],
     "databases": [

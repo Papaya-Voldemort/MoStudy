@@ -293,8 +293,20 @@
                             <h3 class="text-white font-bold text-xl mb-1" style="font-family: var(--font-heading);">Q&A Round</h3>
                             <p class="text-indigo-100 text-sm">Answer the follow-up questions</p>
                         </div>
-                        <div id="qa-timer" class="roleplay-timer bg-white/20 text-white text-3xl font-bold px-6 py-3 rounded-xl">
-                            1:00
+                        <div class="flex items-center gap-3">
+                            <!-- Voice Mode Toggle -->
+                            <div class="flex items-center gap-2">
+                                <label class="flex items-center gap-2 cursor-pointer" title="Enable judge voice and voice answers">
+                                    <span class="text-indigo-100 text-sm font-medium hidden sm:inline">Voice Mode</span>
+                                    <div class="relative">
+                                        <input type="checkbox" id="voice-mode-toggle" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-400"></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div id="qa-timer" class="roleplay-timer bg-white/20 text-white text-3xl font-bold px-6 py-3 rounded-xl">
+                                1:00
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -311,6 +323,32 @@
                         <div id="questions-list" class="space-y-3">
                             <!-- Questions populated dynamically -->
                         </div>
+
+                        <!-- Judge Audio Player - shown when voice mode is active and audio is playing -->
+                        <div id="judge-audio-player" class="hidden mt-4 flex items-center gap-3 bg-indigo-100 rounded-lg p-3" aria-live="polite">
+                            <div id="judge-speaking-indicator" class="flex items-center gap-2 text-indigo-700">
+                                <!-- Animated waveform icon -->
+                                <svg class="w-5 h-5 motion-safe:animate-pulse" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 3v18M8 7v10M4 10v4M16 7v10M20 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+                                </svg>
+                                <span id="judge-speaking-name" class="text-sm font-semibold">Judge speaking...</span>
+                            </div>
+                            <audio id="judge-audio-element" class="hidden" aria-hidden="true"></audio>
+                            <button id="replay-judge-audio" class="ml-auto text-indigo-600 hover:text-indigo-800 text-xs underline hidden" aria-label="Replay judge audio">
+                                Replay
+                            </button>
+                        </div>
+
+                        <!-- TTS Loading State -->
+                        <div id="judge-tts-loading" class="hidden mt-4 flex items-center gap-2 text-indigo-600 text-sm" aria-live="polite">
+                            <div class="ai-loading-spinner w-4 h-4"></div>
+                            <span>Preparing judge's voice...</span>
+                        </div>
+
+                        <!-- TTS Error State -->
+                        <div id="judge-tts-error" class="hidden mt-4 text-amber-700 text-sm bg-amber-50 rounded-lg p-3" role="alert">
+                            <span>⚠️ Voice unavailable — questions shown as text above.</span>
+                        </div>
                     </div>
 
                     <!-- Read Delay Message -->
@@ -322,6 +360,39 @@
 
                     <!-- Recording Status (Hidden until delay ends) -->
                     <div id="qa-recording-section" class="hidden">
+                        <!-- Voice Answer Controls - shown when voice mode is active -->
+                        <div id="voice-answer-controls" class="hidden mb-4">
+                            <div class="flex items-center justify-center gap-4">
+                                <!-- Push-to-talk mic button -->
+                                <button id="voice-answer-btn"
+                                    class="w-16 h-16 rounded-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white flex items-center justify-center shadow-lg transition-all"
+                                    aria-label="Tap to speak your answer"
+                                    title="Tap to speak">
+                                    <svg id="mic-icon" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-7a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                    <svg id="mic-recording-icon" class="w-8 h-8 hidden" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <rect x="9" y="9" width="6" height="6" rx="1"/>
+                                    </svg>
+                                </button>
+                                <div class="text-center">
+                                    <p id="voice-answer-hint" class="text-indigo-700 font-semibold text-sm">Tap to speak</p>
+                                    <p class="text-slate-500 text-xs mt-1">Or use the existing recording above</p>
+                                </div>
+                            </div>
+
+                            <!-- STT Loading State -->
+                            <div id="stt-loading" class="hidden mt-3 flex items-center justify-center gap-2 text-indigo-600 text-sm" aria-live="polite">
+                                <div class="ai-loading-spinner w-4 h-4"></div>
+                                <span>Transcribing your answer...</span>
+                            </div>
+
+                            <!-- STT Error State -->
+                            <div id="stt-error" class="hidden mt-3 text-amber-700 text-sm bg-amber-50 rounded-lg p-3 text-center" role="alert">
+                                ⚠️ Transcription failed — your audio is still saved for evaluation.
+                            </div>
+                        </div>
+
                         <div class="flex items-center justify-center gap-4 mb-6">
                             <div class="flex items-center gap-3 bg-indigo-50 text-indigo-700 px-6 py-3 rounded-full">
                                 <div class="w-3 h-3 rounded-full bg-indigo-600 recording-indicator"></div>
@@ -452,7 +523,7 @@
         }
     </script>
     <script type="module" src="auth.js?v=20260131b"></script>
-    <script src="cache.js?v=20260131b"></script>
+    <script src="lib/cache.js?v=20260131b"></script>
     <script src="theme.js?v=20260131b" defer></script>
     <script src="nav.js?v=20260131b" defer></script>
     <script src="loading-utils.js?v=20260201a" defer></script>

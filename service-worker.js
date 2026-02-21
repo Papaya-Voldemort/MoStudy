@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v20260203a';
+const CACHE_VERSION = 'v20260221a';
 const STATIC_CACHE = `mostudy-static-${CACHE_VERSION}`;
 const DATA_CACHE = `mostudy-data-${CACHE_VERSION}`;
 

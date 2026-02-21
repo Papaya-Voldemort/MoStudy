@@ -210,6 +210,32 @@ const JUDGE_POOL = [
     }
 ];
 
+// ==================== VOICE FEATURE CONSTANTS ====================
+
+/**
+ * Maps each judge name to a Chatterbox Pro voice preset.
+ * Female judges use 'Aria', male judges use 'William'.
+ * These are the two primary voice presets available in resemble-ai/chatterbox-pro.
+ */
+const JUDGE_VOICE_MAP = {
+    'Dr. Margaret Chen':  { voice: 'Aria',    description: 'Professional female, measured pace' },
+    'Marcus Williams':    { voice: 'William', description: 'Authoritative male, direct' },
+    'Dr. Yuki Tanaka':    { voice: 'Aria',    description: 'Thoughtful female, deliberate' },
+    'Robert Martinez':    { voice: 'William', description: 'Precise male, formal' },
+    "Sarah O'Brien":      { voice: 'Aria',    description: 'Energetic female, encouraging' },
+    'Dr. Kwame Asante':   { voice: 'William', description: 'Deep male, analytical' },
+    'Jennifer Park':      { voice: 'Aria',    description: 'Practical female, efficient' },
+    'David Thompson':     { voice: 'William', description: 'Warm male, supportive' },
+    'Dr. Aisha Patel':    { voice: 'Aria',    description: 'Strategic female, confident' },
+    'Michael Chang':      { voice: 'William', description: 'Sharp male, pragmatic' }
+};
+
+/** Default voice if judge not found in JUDGE_VOICE_MAP */
+const DEFAULT_JUDGE_VOICE = 'William';
+
+/** Female judges for browser TTS fallback pitch selection */
+const FEMALE_JUDGES = ['Dr. Margaret Chen', 'Dr. Yuki Tanaka', "Sarah O'Brien", 'Jennifer Park', 'Dr. Aisha Patel'];
+
 // ==================== FBLA RUBRIC ====================
 
 const FBLA_RUBRIC = {
@@ -346,7 +372,13 @@ let appState = {
     generationStatusInterval: null,
 
     // Q&A settings
-    qaTiming: 'before' // 'before' or 'after'
+    qaTiming: 'before', // 'before' or 'after'
+
+    // Voice feature state
+    voiceMode: false,           // Whether voice mode is enabled
+    voiceRecording: false,      // Whether voice answer is currently recording via voice btn
+    currentJudgeAudio: null,    // Current HTMLAudioElement for judge TTS
+    ttsCache: {}                // Cache: "voice:textPrefix" -> audio URL
 };
 
 // ==================== AUTH HELPER ====================
@@ -546,6 +578,27 @@ function bindRoleplayInputs() {
     const noteInput = document.getElementById('note-card-input');
     if (noteInput) {
         noteInput.addEventListener('input', updateCharCount);
+    }
+
+    // Voice mode toggle
+    const voiceToggle = document.getElementById('voice-mode-toggle');
+    if (voiceToggle) {
+        voiceToggle.addEventListener('change', (e) => {
+            appState.voiceMode = e.target.checked;
+            console.log('[VOICE] Voice mode:', appState.voiceMode ? 'enabled' : 'disabled');
+        });
+    }
+
+    // Replay judge audio button
+    const replayBtn = document.getElementById('replay-judge-audio');
+    if (replayBtn) {
+        replayBtn.addEventListener('click', () => {
+            const audioEl = document.getElementById('judge-audio-element');
+            if (audioEl && audioEl.src) {
+                audioEl.currentTime = 0;
+                audioEl.play().catch(e => console.warn('[VOICE] Replay failed:', e));
+            }
+        });
     }
 }
 
@@ -1254,10 +1307,22 @@ function initializeSpeechRecognition() {
 
     appState.recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
+        
+        if (event.error === 'not-allowed') {
+            console.warn('Speech recognition permission denied. Stopping auto-restart.');
+            appState.isRecording = false; // Stop the loop
+            showVoiceError('Microphone access was denied. Please check your browser settings and ensure you have granted permission.');
+            return;
+        }
+
         if (event.error === 'no-speech') {
             // Restart recognition
             if (appState.isRecording) {
-                appState.recognition.start();
+                try {
+                    appState.recognition.start();
+                } catch (e) {
+                    console.warn('Could not restart recognition after no-speech:', e);
+                }
             }
         }
     };
@@ -1350,17 +1415,24 @@ async function startAudioCapture(target) {
     appState.audioChunks = [];
 
     try {
-        // Request mono audio at 16kHz sample rate for optimal file size (speech-optimized)
-        const audioConstraints = {
-            audio: {
-                channelCount: 1,        // Mono (50% size reduction)
-                sampleRate: 16000,      // 16kHz (good for speech, down from 44.1kHz)
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+        console.log('[DIAG] Attempting getUserMedia with constraints:', audioConstraints);
+        console.log('[DIAG] User gesture context:', !!event?.isTrusted); // Check if from user gesture
+
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+            console.log('[DIAG] getUserMedia succeeded with constraints');
+        } catch (constraintError) {
+            console.error('[DIAG] getUserMedia constraints failed:', constraintError.name, constraintError.message, constraintError.constraint);
+            try {
+                console.log('[DIAG] Falling back to basic {audio: true}');
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('[DIAG] Fallback getUserMedia succeeded');
+            } catch (fallbackError) {
+                console.error('[DIAG] Fallback getUserMedia failed:', fallbackError.name, fallbackError.message);
+                throw fallbackError;
             }
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+        }
 
         // Keep the stream reference so we can stop tracks later.
         appState.audioStream = stream;
@@ -1402,11 +1474,17 @@ async function startAudioCapture(target) {
 
         mr.start();
         appState.isRecording = true;
-        console.log('MediaRecorder started for:', target, '| mime:', appState.audioMimeType);
+        console.log('[DIAG] MediaRecorder started for:', target, '| mime:', appState.audioMimeType);
 
     } catch (error) {
-        console.error('Failed to start MP3 recording:', error);
-        alert('Could not access microphone. Please ensure you have granted permission.');
+        console.error('[DIAG] startAudioCapture full failure:', error.name, error.message);
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            showMicPermissionError();
+        } else if (error.name === 'NotFoundError') {
+            showVoiceError('No microphone found. Please connect a microphone and try again.');
+        } else {
+            showVoiceError('Could not access microphone: ' + error.message);
+        }
     }
 }
 
@@ -2168,6 +2246,12 @@ function displayQAQuestions() {
             <p class="text-indigo-800">${escapeHtml(q)}</p>
         </div>
     `).join('');
+
+    // Voice mode: speak questions aloud via TTS
+    if (appState.voiceMode && appState.selectedJudges.length > 0) {
+        const primaryJudge = appState.selectedJudges[0];
+        speakJudgeQuestions(appState.qaQuestions, primaryJudge);
+    }
 }
 
 function startQAReadDelay() {
@@ -2196,6 +2280,13 @@ function startQARecording() {
     // Reset Q&A transcript
     appState.qaTranscript = "";
 
+    // Voice mode: show voice answer controls and bind button
+    if (appState.voiceMode) {
+        const voiceControls = document.getElementById('voice-answer-controls');
+        if (voiceControls) voiceControls.classList.remove('hidden');
+        bindVoiceAnswerButton();
+    }
+
     // Start recording and timer
     startRecording('qa');
     startQATimer();
@@ -2210,6 +2301,17 @@ async function endQARecording() {
             await appState.audioProcessingPromise;
         } catch (error) {
             console.warn('Audio processing failed:', error);
+        }
+    }
+
+    // Voice mode: attempt fast Replicate STT transcription before judging
+    // This populates qaTranscript early so judging can use it directly
+    if (appState.voiceMode && appState.qaAudioBase64 && !appState.qaTranscript) {
+        const transcript = await transcribeWithReplicate(appState.qaAudioBase64, appState.qaAudioMimeType);
+        if (transcript) {
+            appState.qaTranscript = transcript;
+            appState.qaTranscriptPrepared = true; // Skip Gemini re-transcription
+            console.log('[VOICE] Q&A transcript from Replicate STT:', transcript.substring(0, 100));
         }
     }
 
@@ -3030,8 +3132,18 @@ function startNewSession() {
         mainTranscriptPrepared: false,
         qaTranscriptPrepared: false,
         generationStatusInterval: null,
-        qaTiming: 'before'
+        qaTiming: 'before',
+        voiceMode: false,
+        voiceRecording: false,
+        currentJudgeAudio: null,
+        ttsCache: {}
     };
+
+    // Reset voice mode toggle UI
+    const voiceToggle = document.getElementById('voice-mode-toggle');
+    if (voiceToggle) {
+        voiceToggle.checked = false;
+    }
 
     // Hide session timer
     const sessionTimer = document.getElementById('session-timer');
@@ -3279,6 +3391,406 @@ The Board has selected **Japan** as the next target market due to its high tech 
 
     throw new Error('AI service unavailable');
 }
+
+// ==================== VOICE FEATURE FUNCTIONS ====================
+
+/**
+ * Returns the Chatterbox Pro voice preset for a given judge name.
+ * @param {string} judgeName
+ * @returns {string} voice preset name
+ */
+function getJudgeVoice(judgeName) {
+    const voiceConfig = JUDGE_VOICE_MAP[judgeName];
+    return voiceConfig ? voiceConfig.voice : DEFAULT_JUDGE_VOICE;
+}
+
+/**
+ * Returns browser SpeechSynthesis config for a judge (fallback TTS).
+ * @param {string} judgeName
+ * @returns {{ rate: number, pitch: number, preferFemale: boolean }}
+ */
+function getBrowserTTSConfig(judgeName) {
+    const isFemale = FEMALE_JUDGES.includes(judgeName);
+    return {
+        rate: 0.9,
+        pitch: isFemale ? 1.1 : 0.9,
+        preferFemale: isFemale
+    };
+}
+
+/**
+ * Speaks text using the browser's built-in SpeechSynthesis API.
+ * Used as fallback when Replicate TTS is unavailable.
+ * @param {string} text
+ * @param {{ rate: number, pitch: number, preferFemale: boolean }} config
+ * @returns {Promise<void>}
+ */
+function speakWithBrowserTTS(text, config) {
+    return new Promise((resolve) => {
+        if (!window.speechSynthesis) {
+            console.warn('[VOICE] Browser SpeechSynthesis not available');
+            resolve();
+            return;
+        }
+
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = config.rate || 0.9;
+        utterance.pitch = config.pitch || 1.0;
+        utterance.volume = 1.0;
+
+        // Try to select an appropriate voice
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            const preferred = voices.find(v =>
+                v.lang.startsWith('en') &&
+                (config.preferFemale ? v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') : true)
+            ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+            if (preferred) utterance.voice = preferred;
+        }
+
+        utterance.onend = () => resolve();
+        utterance.onerror = (e) => {
+            console.warn('[VOICE] Browser TTS error:', e);
+            resolve();
+        };
+
+        window.speechSynthesis.speak(utterance);
+    });
+}
+
+/**
+ * Plays audio from a URL using the hidden judge audio element.
+ * @param {string} audioUrl
+ * @param {string} judgeName
+ * @returns {Promise<void>}
+ */
+function playAudioFromUrl(audioUrl, judgeName) {
+    return new Promise((resolve) => {
+        const audioEl = document.getElementById('judge-audio-element');
+        const audioPlayer = document.getElementById('judge-audio-player');
+        const replayBtn = document.getElementById('replay-judge-audio');
+        const speakingName = document.getElementById('judge-speaking-name');
+
+        if (!audioEl) {
+            resolve();
+            return;
+        }
+
+        if (speakingName) speakingName.textContent = `${judgeName} speaking...`;
+        if (audioPlayer) audioPlayer.classList.remove('hidden');
+        if (replayBtn) replayBtn.classList.add('hidden');
+
+        audioEl.src = audioUrl;
+        audioEl.onended = () => {
+            if (replayBtn) replayBtn.classList.remove('hidden');
+            resolve();
+        };
+        audioEl.onerror = (e) => {
+            console.warn('[VOICE] Audio playback error:', e);
+            if (audioPlayer) audioPlayer.classList.add('hidden');
+            resolve(); // Don't block — continue session
+        };
+
+        audioEl.play().catch((e) => {
+            console.warn('[VOICE] Audio play() failed (autoplay policy?):', e);
+            // Show replay button so user can manually trigger
+            if (replayBtn) replayBtn.classList.remove('hidden');
+            resolve();
+        });
+    });
+}
+
+/**
+ * Calls the voice-tts Appwrite function to generate audio for a single question,
+ * then plays it. Uses in-memory cache to avoid re-generating the same text.
+ * @param {string} text - The question text to speak
+ * @param {string} voice - The Chatterbox Pro voice preset
+ * @param {string} judgeName - The judge's name (for display)
+ * @returns {Promise<void>}
+ */
+async function speakSingleQuestion(text, voice, judgeName) {
+    // Check cache first
+    const cacheKey = `${voice}:${text.substring(0, 50)}`;
+    if (appState.ttsCache[cacheKey]) {
+        console.log('[VOICE] TTS cache hit for:', cacheKey);
+        await playAudioFromUrl(appState.ttsCache[cacheKey], judgeName);
+        return;
+    }
+
+    try {
+        const execution = await safeExecuteFunction('voice-tts', { text, voice, judgeId: judgeName });
+        const data = JSON.parse(execution.responseBody);
+
+        if (data.audioUrl) {
+            // Cache the audio URL
+            appState.ttsCache[cacheKey] = data.audioUrl;
+            await playAudioFromUrl(data.audioUrl, judgeName);
+        } else {
+            throw new Error(data.error || 'No audioUrl in response');
+        }
+    } catch (err) {
+        console.warn('[VOICE] speakSingleQuestion failed:', err.message);
+        throw err; // Let speakJudgeQuestions handle the fallback
+    }
+}
+
+/**
+ * Orchestrates TTS for all Q&A questions.
+ * Falls back to browser SpeechSynthesis if Replicate TTS fails.
+ * Falls back to text-only if browser TTS also fails.
+ * @param {string[]} questions
+ * @param {{ name: string }} judge
+ */
+async function speakJudgeQuestions(questions, judge) {
+    const ttsLoading = document.getElementById('judge-tts-loading');
+    const ttsError = document.getElementById('judge-tts-error');
+    const audioPlayer = document.getElementById('judge-audio-player');
+
+    // Reset error state
+    if (ttsError) ttsError.classList.add('hidden');
+    if (ttsLoading) ttsLoading.classList.remove('hidden');
+
+    const voice = getJudgeVoice(judge.name);
+
+    try {
+        for (const question of questions) {
+            if (!appState.voiceMode) break; // User may have toggled off
+            await speakSingleQuestion(question, voice, judge.name);
+        }
+        if (ttsLoading) ttsLoading.classList.add('hidden');
+    } catch (err) {
+        console.warn('[VOICE] Replicate TTS failed, trying browser TTS:', err.message);
+        if (ttsLoading) ttsLoading.classList.add('hidden');
+        if (audioPlayer) audioPlayer.classList.add('hidden');
+
+        // Try browser TTS fallback
+        try {
+            const config = getBrowserTTSConfig(judge.name);
+            for (const question of questions) {
+                if (!appState.voiceMode) break;
+                await speakWithBrowserTTS(question, config);
+            }
+        } catch (browserTTSError) {
+            console.warn('[VOICE] Browser TTS also failed:', browserTTSError);
+            // Show error message but don't block session
+            if (ttsError) ttsError.classList.remove('hidden');
+            // Questions are still visible as text — session continues normally
+        }
+    }
+}
+
+/**
+ * Calls the voice-stt Appwrite function to transcribe audio.
+ * Returns empty string on failure (audio blob is still saved for Gemini at judging time).
+ * @param {string} audioBase64
+ * @param {string} mimeType
+ * @returns {Promise<string>} transcript or empty string
+ */
+async function transcribeWithReplicate(audioBase64, mimeType) {
+    const sttLoading = document.getElementById('stt-loading');
+    const sttError = document.getElementById('stt-error');
+
+    if (sttLoading) sttLoading.classList.remove('hidden');
+    if (sttError) sttError.classList.add('hidden');
+
+    try {
+        const execution = await safeExecuteFunction('voice-stt', { audioBase64, mimeType });
+        const data = JSON.parse(execution.responseBody);
+
+        if (sttLoading) sttLoading.classList.add('hidden');
+
+        if (data.transcript) {
+            return data.transcript;
+        }
+        throw new Error('Empty transcript returned');
+
+    } catch (err) {
+        console.warn('[VOICE] Replicate STT failed:', err.message);
+        if (sttLoading) sttLoading.classList.add('hidden');
+        if (sttError) sttError.classList.remove('hidden');
+
+        // Return empty string — audio blob is still saved for Gemini transcription at judging
+        return '';
+    }
+}
+
+/**
+ * Sets the voice answer button to idle state (mic icon, indigo color).
+ */
+function setVoiceBtnIdle() {
+    const btn = document.getElementById('voice-answer-btn');
+    const micIcon = document.getElementById('mic-icon');
+    const stopIcon = document.getElementById('mic-recording-icon');
+    const hint = document.getElementById('voice-answer-hint');
+
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.remove('bg-red-600', 'hover:bg-red-700', 'motion-safe:animate-pulse', 'opacity-50', 'cursor-not-allowed');
+    btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+    if (micIcon) micIcon.classList.remove('hidden');
+    if (stopIcon) stopIcon.classList.add('hidden');
+    if (hint) hint.textContent = 'Tap to speak';
+    appState.voiceRecording = false;
+}
+
+/**
+ * Sets the voice answer button to recording state (stop icon, red color, pulse).
+ */
+function setVoiceBtnRecording() {
+    const btn = document.getElementById('voice-answer-btn');
+    const micIcon = document.getElementById('mic-icon');
+    const stopIcon = document.getElementById('mic-recording-icon');
+    const hint = document.getElementById('voice-answer-hint');
+
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'opacity-50', 'cursor-not-allowed');
+    btn.classList.add('bg-red-600', 'hover:bg-red-700', 'motion-safe:animate-pulse');
+    if (micIcon) micIcon.classList.add('hidden');
+    if (stopIcon) stopIcon.classList.remove('hidden');
+    if (hint) hint.textContent = 'Recording... tap to stop';
+    appState.voiceRecording = true;
+}
+
+/**
+ * Sets the voice answer button to processing state (disabled, spinner hint).
+ */
+function setVoiceBtnProcessing() {
+    const btn = document.getElementById('voice-answer-btn');
+    const hint = document.getElementById('voice-answer-hint');
+
+    if (!btn) return;
+    btn.disabled = true;
+    btn.classList.remove('motion-safe:animate-pulse');
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+    if (hint) hint.textContent = 'Processing...';
+}
+
+/**
+ * Handles the voice answer button toggle (start/stop recording).
+ * Integrates with the existing startAudioCapture/stopAudioCapture infrastructure.
+ */
+async function handleVoiceAnswerToggle() {
+    if (appState.voiceRecording) {
+        // Stop recording
+        setVoiceBtnProcessing();
+        stopRecording(); // Uses existing stopRecording() which calls stopAudioCapture()
+
+        // Wait for audio processing to complete
+        if (appState.audioProcessingPromise) {
+            try {
+                await appState.audioProcessingPromise;
+            } catch (e) {
+                console.warn('[VOICE] Audio processing error:', e);
+            }
+        }
+
+        // Attempt real-time STT transcription
+        if (appState.qaAudioBase64) {
+            const transcript = await transcribeWithReplicate(appState.qaAudioBase64, appState.qaAudioMimeType);
+            if (transcript) {
+                appState.qaTranscript = transcript;
+                // Update the transcript display
+                const qaTranscriptEl = document.getElementById('qa-transcript');
+                if (qaTranscriptEl) {
+                    qaTranscriptEl.innerHTML = `
+                        <div class="text-green-600 font-semibold mb-2">Transcription complete.</div>
+                        <div class="text-slate-700 leading-relaxed">${escapeHtml(transcript)}</div>
+                    `;
+                }
+            }
+        }
+
+        setVoiceBtnIdle();
+    } else {
+        // Start recording
+        setVoiceBtnRecording();
+        startRecording('qa'); // Uses existing startRecording() which calls startAudioCapture()
+    }
+}
+
+/**
+ * Binds the voice answer button click handler.
+ * Called once when the Q&A recording section becomes visible in voice mode.
+ */
+function bindVoiceAnswerButton() {
+    const btn = document.getElementById('voice-answer-btn');
+    if (!btn) return;
+
+    // Remove any existing listener by cloning
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+
+    newBtn.addEventListener('click', () => {
+        handleVoiceAnswerToggle();
+    });
+
+    // Keyboard accessibility: Enter/Space
+    newBtn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleVoiceAnswerToggle();
+        }
+    });
+
+    setVoiceBtnIdle();
+}
+
+/**
+ * Shows a styled microphone permission error and disables voice mode.
+ */
+function showMicPermissionError() {
+    showVoiceError(
+        'Microphone access was denied. To use voice features:\n' +
+        '1. Click the lock icon in your browser address bar\n' +
+        '2. Allow microphone access\n' +
+        '3. Refresh the page\n\n' +
+        'You can still use the existing recording controls.'
+    );
+    // Disable voice mode toggle
+    const toggle = document.getElementById('voice-mode-toggle');
+    if (toggle) {
+        toggle.checked = false;
+        toggle.disabled = true;
+        appState.voiceMode = false;
+    }
+}
+
+/**
+ * Shows a non-blocking voice error notification.
+ * Uses a toast-style alert that auto-dismisses.
+ * @param {string} message
+ */
+function showVoiceError(message) {
+    console.error('[VOICE] Error:', message);
+
+    // Try to show in the STT error element if visible
+    const sttError = document.getElementById('stt-error');
+    if (sttError && !sttError.closest('.hidden')) {
+        sttError.textContent = `⚠️ ${message}`;
+        sttError.classList.remove('hidden');
+        return;
+    }
+
+    // Fallback: create a temporary toast notification
+    const toast = document.createElement('div');
+    toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-xl px-6 py-3 shadow-lg max-w-sm text-center';
+    toast.setAttribute('role', 'alert');
+    toast.textContent = `⚠️ ${message}`;
+    document.body.appendChild(toast);
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.5s';
+        setTimeout(() => toast.remove(), 500);
+    }, 5000);
+}
+
+// ==================== END VOICE FEATURE FUNCTIONS ====================
 
 function escapeHtml(text) {
     if (!text) return '';

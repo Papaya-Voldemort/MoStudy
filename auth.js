@@ -11,7 +11,8 @@ let currentUser = null;
 
 // Initialize Auth
 export const initAuth = async () => {
-    console.log('[Auth] Initializing authentication...');
+    console.log('[DIAG] [Auth] Initializing authentication... Project ID:', APPWRITE_PROJECT_ID);
+    console.log('[DIAG] [Auth] account SDK available:', !!account);
     try {
         currentUser = await account.get();
         console.log('[Auth] User authenticated:', currentUser.email);
@@ -25,8 +26,9 @@ export const initAuth = async () => {
         bindAccountPageEvents();
 
     } catch (e) {
+        console.error('[DIAG] [Auth] account.get() failed:', e.code, e.type, e.message);
         // Not logged in
-        console.log('[Auth] User not logged in:', e.message);
+        console.log('[Auth] User not logged in');
         updateUI(false);
         window.dispatchEvent(new CustomEvent('auth-initialized', { detail: null }));
     }
@@ -34,6 +36,7 @@ export const initAuth = async () => {
 };
 
 export const login = async () => {
+    console.log('[DIAG] [Auth] Starting OAuth login...');
     try {
         // Use absolute URLs for OAuth callback
         const successUrl = window.location.origin + window.location.pathname;
@@ -45,7 +48,7 @@ export const login = async () => {
             failureUrl
         );
     } catch (e) {
-        console.error('Login failed:', e);
+        console.error('[DIAG] [Auth] OAuth login failed:', e.code, e.type, e.message);
         alert('Login failed. Please try again.');
     }
 };

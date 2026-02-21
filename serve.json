@@ -12,7 +12,7 @@
       "headers": [
         {
           "key": "Permissions-Policy",
-          "value": "browsing-topics=(), geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+          "value": "browsing-topics=(), geolocation=(), microphone=(self), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
         }
       ]
     }
