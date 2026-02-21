@@ -1306,6 +1306,12 @@ function initializeSpeechRecognition() {
             return;
         }
 
+        if (event.error === 'network') {
+            console.warn('Speech recognition network error. This may be due to concurrent microphone usage or connection issues.');
+            // Don't immediately restart on network error to avoid rapid toggling
+            return;
+        }
+
         if (event.error === 'no-speech') {
             // Restart recognition
             if (appState.isRecording) {
@@ -1405,9 +1411,19 @@ async function startAudioCapture(target) {
     appState.recordingBackend = null;
     appState.audioChunks = [];
 
+    const audioConstraints = {
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        }
+    };
+
     try {
         console.log('[DIAG] Attempting getUserMedia with constraints:', audioConstraints);
-        console.log('[DIAG] User gesture context:', !!event?.isTrusted); // Check if from user gesture
+        // Check if event is defined before accessing isTrusted
+        const isTrusted = typeof event !== 'undefined' ? !!event?.isTrusted : 'unknown';
+        console.log('[DIAG] User gesture context:', isTrusted); 
 
         let stream;
         try {
