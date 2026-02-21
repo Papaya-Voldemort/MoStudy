@@ -580,15 +580,6 @@ function bindRoleplayInputs() {
         noteInput.addEventListener('input', updateCharCount);
     }
 
-    // Voice mode toggle
-    const voiceToggle = document.getElementById('voice-mode-toggle');
-    if (voiceToggle) {
-        voiceToggle.addEventListener('change', (e) => {
-            appState.voiceMode = e.target.checked;
-            console.log('[VOICE] Voice mode:', appState.voiceMode ? 'enabled' : 'disabled');
-        });
-    }
-
     // Replay judge audio button
     const replayBtn = document.getElementById('replay-judge-audio');
     if (replayBtn) {
@@ -3133,17 +3124,11 @@ function startNewSession() {
         qaTranscriptPrepared: false,
         generationStatusInterval: null,
         qaTiming: 'before',
-        voiceMode: false,
+        voiceMode: window.userSettings?.voiceMode || false,
         voiceRecording: false,
         currentJudgeAudio: null,
         ttsCache: {}
     };
-
-    // Reset voice mode toggle UI
-    const voiceToggle = document.getElementById('voice-mode-toggle');
-    if (voiceToggle) {
-        voiceToggle.checked = false;
-    }
 
     // Hide session timer
     const sessionTimer = document.getElementById('session-timer');

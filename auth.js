@@ -97,6 +97,7 @@ const bindAccountPageEvents = () => {
     saveBtn.onclick = async () => {
         const notif = document.getElementById('notif-toggle').checked;
         const timer = document.getElementById('timer-sounds-toggle').checked;
+        const voice = document.getElementById('voice-mode-toggle-settings')?.checked || false;
         const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
         
         saveBtn.textContent = 'Saving...';
@@ -106,10 +107,13 @@ const bindAccountPageEvents = () => {
             ...window.userSettings,
             notifications: notif,
             timerAlerts: timer,
+            voiceMode: voice,
             theme: theme 
         };
 
+        console.log('[DIAG] Saving settings:', newSettings);
         const success = await saveSettings(newSettings);
+        console.log('[DIAG] Save settings result:', success);
         
         saveBtn.textContent = success ? 'Saved!' : 'Error';
         setTimeout(() => {
@@ -161,6 +165,7 @@ export const loadSettings = async () => {
                     COLLECTION_USERS,
                     currentUser.$id
                 );
+                console.log('[DIAG] Loaded document from Appwrite:', doc);
                 return doc.preferences ? JSON.parse(doc.preferences) : {};
             } catch (e) {
                 if (e.code === 404) {
@@ -210,15 +215,17 @@ export const saveSettings = async (newSettings) => {
     // 3. Persist to Backend
     try {
         const settingsStr = JSON.stringify(newSettings);
+        console.log('[DIAG] Updating document in Appwrite:', currentUser.$id, { preferences: settingsStr });
         await databases.updateDocument(
             DB_ID,
             COLLECTION_USERS,
             currentUser.$id,
             { preferences: settingsStr }
         );
+        console.log('[DIAG] Appwrite updateDocument successful');
         return true;
     } catch (e) {
-        console.error('Failed to save settings:', e);
+        console.error('[DIAG] Failed to save settings to Appwrite:', e);
         // We could revert cache here if needed, but for settings loose consistency is usually fine
         return false;
     }
@@ -244,6 +251,11 @@ const applySettings = (settings) => {
     const timerToggle = document.getElementById('timer-sounds-toggle');
     if (timerToggle && typeof settings.timerAlerts !== 'undefined') {
         timerToggle.checked = settings.timerAlerts;
+    }
+
+    const voiceToggle = document.getElementById('voice-mode-toggle-settings');
+    if (voiceToggle && typeof settings.voiceMode !== 'undefined') {
+        voiceToggle.checked = settings.voiceMode;
     }
 };
 
