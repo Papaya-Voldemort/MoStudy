@@ -294,6 +294,14 @@
                             <p class="text-indigo-100 text-sm">Answer the follow-up questions</p>
                         </div>
                         <div class="flex items-center gap-3">
+                            <!-- Voice Mode Toggle -->
+                            <label class="flex items-center gap-2 cursor-pointer bg-white/10 hover:bg-white/20 transition-colors px-3 py-2 rounded-lg" title="Enable AI judge voices and voice-to-text answers">
+                                <input type="checkbox" id="voice-mode-toggle-qa" class="sr-only peer">
+                                <div class="w-9 h-5 bg-white/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 relative"></div>
+                                <svg class="w-5 h-5 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" title="Voice Mode">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-7a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                </svg>
+                            </label>
                             <div id="qa-timer" class="roleplay-timer bg-white/20 text-white text-3xl font-bold px-6 py-3 rounded-xl">
                                 1:00
                             </div>

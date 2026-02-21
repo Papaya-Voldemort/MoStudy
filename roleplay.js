@@ -381,6 +381,23 @@ let appState = {
     ttsCache: {}                // Cache: "voice:textPrefix" -> audio URL
 };
 
+// ==================== VOICE MODE SYNC ====================
+// Listen for settings loaded event to sync voiceMode with user preferences
+window.addEventListener('settings-loaded', (e) => {
+    if (e.detail?.voiceMode !== undefined) {
+        appState.voiceMode = e.detail.voiceMode;
+        console.log('[VOICE] Voice mode synced from settings:', appState.voiceMode);
+    }
+});
+
+// Also listen for settings changes from account page (via cache-updated event)
+window.addEventListener('cache-updated', (e) => {
+    if (e.detail?.data?.voiceMode !== undefined) {
+        appState.voiceMode = e.detail.data.voiceMode;
+        console.log('[VOICE] Voice mode updated from cache:', appState.voiceMode);
+    }
+});
+
 // ==================== AUTH HELPER ====================
 
 /**
@@ -588,6 +605,34 @@ function bindRoleplayInputs() {
             if (audioEl && audioEl.src) {
                 audioEl.currentTime = 0;
                 audioEl.play().catch(e => console.warn('[VOICE] Replay failed:', e));
+            }
+        });
+    }
+
+    // Voice mode toggle on Q&A screen
+    const voiceModeToggle = document.getElementById('voice-mode-toggle-qa');
+    if (voiceModeToggle) {
+        // Sync with current appState
+        voiceModeToggle.checked = appState.voiceMode;
+        
+        voiceModeToggle.addEventListener('change', (e) => {
+            appState.voiceMode = e.target.checked;
+            console.log('[VOICE] Voice mode toggled via Q&A screen:', appState.voiceMode);
+            
+            // Also update the global userSettings if available
+            if (window.userSettings) {
+                window.userSettings.voiceMode = e.target.checked;
+            }
+            
+            // Show/hide voice answer controls if in Q&A recording
+            const voiceControls = document.getElementById('voice-answer-controls');
+            if (voiceControls) {
+                if (e.target.checked) {
+                    voiceControls.classList.remove('hidden');
+                    bindVoiceAnswerButton();
+                } else {
+                    voiceControls.classList.add('hidden');
+                }
             }
         });
     }
